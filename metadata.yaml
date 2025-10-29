@@ -1,5 +1,5 @@
-name: helloworld # 这是你的插件的唯一识别名。
-desc: 这是 AstrBot 的默认插件，支持关键词回复。 # 插件简短描述
-version: v1.3 # 插件版本号。格式：v1.1.1 或者 v1.1
-author: Soulter # 作者
-repo: https://github.com/Soulter/helloworld # 插件的仓库地址
+name: proactive_msg # 这是你的插件的唯一识别名。
+desc: 接入模型的智能主动消息插件，让你的机器人更像一个人 # 插件简短描述
+version: v1.0 # 插件版本号。格式：v1.1.1 或者 v1.1
+author: mochen # 作者
+repo: https://github.com/mochen/astrbot_plugin_proactive_msg # 插件的仓库地址
