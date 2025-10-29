@@ -1,7 +1,5 @@
-name: proactive_msg
-desc: astrbot_plugin_proactive_msg - 主动消息插件 AstrBot智能主动消息插件，可根据上下文和历史对话分析，主动发起有意义的对话，提高机器人交互的自然性和主动性。
-help: 功能包含： 1. 智能时间感知：根据时间上下文判断是否发送主动消息的合适时机 2. 自定义轮询间隔：支持5分钟、10分钟、半小时、1小时、3小时等轮询周期 3. 灵活的消息阈值：可根据用户需求设置无消息时间阈值，避免频繁打扰 4. 多模式回复频率：支持稀少、适中、频繁三种回复模式，适应不同使用场景 5. 自动话题生成：基于LLM分析上下文，自动生成合适的主动话题
-version: 1.0
-author: Claude
-repo: https://github.com/astrbot/astrbot_plugin_proactive_msg
-first_use_config: true
+name: proactive_msg # 这是你的插件的唯一识别名。
+desc: 接入模型的智能主动消息插件，让你的机器人更像一个人 # 插件简短描述
+version: v1.0 # 插件版本号。格式：v1.1.1 或者 v1.1
+author: mochen # 作者
+repo: https://github.com/mochen/astrbot_plugin_proactive_msg # 插件的仓库地址
