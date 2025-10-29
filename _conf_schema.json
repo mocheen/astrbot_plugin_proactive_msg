@@ -1,0 +1,29 @@
+{
+  "poll_interval": {
+    "description": "轮询间隔",
+    "type": "string",
+    "default": "10min",
+    "options": ["5min", "10min", "30min", "1hour", "3hour"],
+    "hint": "设置主动消息检查的轮询间隔时间"
+  },
+  "no_message_threshold": {
+    "description": "无消息时间阈值",
+    "type": "string",
+    "default": "30min",
+    "options": ["1min", "5min", "10min", "30min", "1hour"],
+    "hint": "超过此时间无消息才会触发主动消息检查"
+  },
+  "reply_frequency": {
+    "description": "回复频率模式",
+    "type": "string",
+    "default": "moderate",
+    "options": ["rare", "moderate", "frequent"],
+    "hint": "控制主动消息的发送频率和活跃程度"
+  },
+  "enable_time_check": {
+    "description": "启用时间感知检查",
+    "type": "bool",
+    "default": true,
+    "hint": "检查是否开启datetime_system_prompt配置，增强时间判断准确性"
+  }
+}
