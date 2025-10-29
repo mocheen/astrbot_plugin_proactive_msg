@@ -4,8 +4,8 @@
 """
 import asyncio
 import logging
-from typing import Callable, Any
-from astrbot.core.scheduler import AsyncIOScheduler
+from typing import Callable, Any, Optional
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
 class SchedulerManager:
@@ -18,7 +18,7 @@ class SchedulerManager:
         self.logger = logging.getLogger(__name__)
         self.jobs: list = []
 
-    def start(self):
+    async def start(self):
         """启动调度器"""
         try:
             if self.scheduler is None:
@@ -31,7 +31,7 @@ class SchedulerManager:
             self.logger.error(f"启动调度器失败: {e}")
             raise
 
-    def stop(self):
+    async def stop(self):
         """停止调度器"""
         try:
             if self.scheduler:

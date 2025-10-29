@@ -9,6 +9,8 @@ from typing import Dict, List, Optional, Any
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+from astrbot.core.message.components import Plain
+from astrbot.core.message.message_event_result import MessageChain
 
 # 导入插件内部模块
 from .config import config_manager

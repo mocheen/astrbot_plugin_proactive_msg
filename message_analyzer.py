@@ -11,7 +11,6 @@ from typing import List, Optional, Dict, Any
 from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api.provider import LLMResponse
-from astrbot.core.star.exceptions import StarException
 
 
 class MessageAnalyzer:
