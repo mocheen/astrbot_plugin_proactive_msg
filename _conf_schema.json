@@ -30,6 +30,6 @@
     "description": "仅管理员会话启用",
     "type": "bool",
     "default": false,
-    "hint": "启用后，仅对配置在管理员ID列表中的用户会话发送主动消息"
+    "hint": "启用后，仅对管理员ID的私聊会话发送主动消息"
   }
 }

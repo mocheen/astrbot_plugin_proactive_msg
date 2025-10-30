@@ -52,17 +52,12 @@ class ProactiveMsg(Star):
     def _check_datetime_config(self):
         """检查datetime_system_prompt配置是否开启"""
         try:
-            # 尝试获取主配置中的datetime_system_prompt设置
-            system_config = getattr(self.context, 'config_manager', None)
-            if system_config:
-                try:
-                    config = system_config.get_config() if hasattr(system_config, 'get_config') else {}
-                except:
-                    config = {}
-            else:
-                config = {}
-
-            if not config.get("datetime_system_prompt", False):
+            # 获取AstrBot配置
+            config = self.context.get_config()
+            
+            # 检查provider_settings中的datetime_system_prompt设置
+            provider_settings = config.get("provider_settings", {})
+            if not provider_settings.get("datetime_system_prompt", False):
                 self.logger.warning("警告：datetime_system_prompt配置未开启，主动消息插件可能无法获取准确时间")
         except Exception as e:
             self.logger.warning(f"检查datetime_system_prompt配置时出现异常: {e}")
@@ -79,7 +74,7 @@ class ProactiveMsg(Star):
         self.scheduler.add_job(self._check_and_send_proactive_messages, poll_interval)
 
         # 输出管理员模式状态
-        if self.config_manager.admin_only():
+        if self.config_manager.admin_only:
             self.logger.info("主动消息插件已启用管理员专用模式，仅对管理员会话发送主动消息")
         else:
             self.logger.info("主动消息插件已启用通用模式，对所有私聊会话发送主动消息")
@@ -100,7 +95,7 @@ class ProactiveMsg(Star):
             conversations = await self._get_private_conversations()
 
             # 检查是否仅对管理员会话启用
-            admin_only = self.config_manager.admin_only()
+            admin_only = self.config_manager.admin_only
 
             for session_id in conversations:
                 try:
@@ -126,15 +121,23 @@ class ProactiveMsg(Star):
         try:
             # 使用conversation_manager获取所有对话
             conversation_manager = self.context.conversation_manager
-            conversations = conversation_manager.get_conversations()
-
-            private_sessions = []
+            
+            # 获取所有对话，然后提取唯一的会话ID
+            conversations = await conversation_manager.get_conversations()
+            
+            # 使用集合来存储唯一的会话ID
+            private_sessions = set()
+            
             for conv in conversations:
-                # 过滤私聊会话
-                if self._is_private_conversation(conv):
-                    private_sessions.append(conv.id)
-
-            return private_sessions
+                # conv.user_id 就是会话ID (unified_msg_origin)
+                # 格式为 platform_id:message_type:session_id
+                user_id = conv.user_id
+                
+                # 检查是否为私聊会话
+                if self._is_private_conversation_by_id(user_id):
+                    private_sessions.add(user_id)
+            
+            return list(private_sessions)
         except Exception as e:
             self.logger.error(f"获取私聊会话失败: {e}")
             return []
@@ -144,6 +147,20 @@ class ProactiveMsg(Star):
         try:
             # 根据AstrBot的消息类型判断
             return hasattr(conversation, 'type') and conversation.type == 'private'
+        except Exception as e:
+            self.logger.error(f"判断会话类型失败: {e}")
+            return False
+    
+    def _is_private_conversation_by_id(self, session_id: str) -> bool:
+        """根据会话ID判断是否为私聊会话"""
+        try:
+            # session_id格式为：platform_id:message_type:session_id
+            parts = session_id.split(':')
+            if len(parts) >= 3:
+                # 检查消息类型是否为私聊
+                message_type = parts[1]
+                return message_type == 'FriendMessage'  # 私聊消息类型为FriendMessage
+            return False
         except Exception as e:
             self.logger.error(f"判断会话类型失败: {e}")
             return False
