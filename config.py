@@ -21,7 +21,8 @@ class ConfigManager:
             "poll_interval": "10min",
             "no_message_threshold": "30min",
             "reply_frequency": "moderate",
-            "enable_time_check": True
+            "enable_time_check": True,
+            "admin_only": False
         }
 
     def _load_config(self):
@@ -80,6 +81,11 @@ class ConfigManager:
     def enable_time_check(self) -> bool:
         """获取是否启用时间检查"""
         return self.get("enable_time_check", True)
+
+    @property
+    def admin_only(self) -> bool:
+        """获取是否仅对管理员会话启用"""
+        return self.get("admin_only", False)
 
 
 # 全局配置管理器实例
