@@ -144,7 +144,8 @@ class ProactiveMsg(Star):
                 self.logger.info("本轮轮询没有会话需要发送主动消息")
             
             if sessions_to_skip:
-                self.logger.debug(f"跳过的会话及原因: {sessions_to_skip}")
+                # 将debug级别改为info级别，以便在日志中显示详细拒绝原因
+                self.logger.info(f"跳过的会话及原因: {sessions_to_skip}")
 
         except Exception as e:
             self.logger.error(f"检查主动消息时出现错误: {e}")
@@ -152,25 +153,42 @@ class ProactiveMsg(Star):
     async def _get_private_conversations(self) -> List[str]:
         """获取所有私聊会话ID"""
         try:
+            self.logger.debug("开始获取所有私聊会话")
+            
             # 使用conversation_manager获取所有对话
             conversation_manager = self.context.conversation_manager
             
-            # 获取所有对话，然后提取唯一的会话ID
+            # 检查是否有get_conversations方法
+            if not hasattr(conversation_manager, 'get_conversations'):
+                self.logger.error("conversation_manager没有get_conversations方法")
+                return []
+                
             conversations = await conversation_manager.get_conversations()
+            self.logger.info(f"获取到 {len(conversations) if conversations else 0} 个对话")
             
             # 使用集合来存储唯一的会话ID
             private_sessions = set()
             
             for conv in conversations:
-                # conv.user_id 就是会话ID (unified_msg_origin)
-                # 格式为 platform_id:message_type:session_id
-                user_id = conv.user_id
-                
-                # 检查是否为私聊会话
-                if self._is_private_conversation_by_id(user_id):
-                    private_sessions.add(user_id)
+                try:
+                    # conv.user_id 就是会话ID (unified_msg_origin)
+                    # 格式为 platform_id:message_type:session_id
+                    user_id = conv.user_id
+                    self.logger.debug(f"处理会话ID: {user_id}")
+                    
+                    # 检查是否为私聊会话
+                    if self._is_private_conversation_by_id(user_id):
+                        private_sessions.add(user_id)
+                        self.logger.debug(f"添加私聊会话: {user_id}")
+                    else:
+                        self.logger.debug(f"跳过非私聊会话: {user_id}")
+                except Exception as e:
+                    self.logger.error(f"处理会话时出错: {e}")
+                    continue
             
-            return list(private_sessions)
+            result = list(private_sessions)
+            self.logger.info(f"找到 {len(result)} 个私聊会话: {result}")
+            return result
         except Exception as e:
             self.logger.error(f"获取私聊会话失败: {e}")
             return []

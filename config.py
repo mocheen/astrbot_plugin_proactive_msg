@@ -23,7 +23,7 @@ class ConfigManager:
             "reply_frequency": "moderate",
             "enable_time_check": True,
             "admin_only": False,
-            "debug_trigger_on_init": False
+            "debug_trigger_on_init": True  # 默认启用调试触发，方便调试
         }
 
     def _load_config(self):

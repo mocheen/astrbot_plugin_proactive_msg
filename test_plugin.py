@@ -121,12 +121,13 @@ def test_plugin_import():
         print(f"[OK] 话题提示词生成成功 - 长度: {len(topic_prompt)}")
 
         # 检查提示词是否包含正确的标识
-        if "^&YES&^" in analysis_prompt and "^&NO^" in analysis_prompt:
+        # 检查提示词是否包含正确的标识
+        if "^&YES&^" in analysis_prompt and "^&NO&^" in analysis_prompt:
             print("[OK] 分析提示词格式正确")
         else:
             print("[ERROR] 分析提示词格式不正确")
 
-        if "话题要与当前对话相关或自然延伸" in topic_prompt:
+        if "话题可以与当前对话相关或自然延伸" in topic_prompt:
             print("[OK] 话题提示词格式正确")
         else:
             print("[ERROR] 话题提示词格式不正确")

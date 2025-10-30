@@ -32,14 +32,25 @@ class MessageAnalyzer:
     async def should_send_proactive_message(self, session_id: str) -> bool:
         """第一步：判断是否应该发送主动消息"""
         try:
+            self.logger.info(f"开始分析会话 {session_id} 是否需要发送主动消息")
+            
             # 检查最近是否有消息
             has_recent_message = await self._has_recent_message(session_id)
             if has_recent_message:
-                self.logger.debug(f"会话 {session_id} 最近有消息，跳过主动消息检查")
+                self.logger.info(f"会话 {session_id} 最近有消息，跳过主动消息检查")
                 return False
+
+            # 获取消息历史
+            message_history = await self._get_message_history(session_id)
+            if not message_history:
+                self.logger.warning(f"会话 {session_id} 没有消息历史，无法进行LLM分析")
+                return False
+                
+            self.logger.info(f"会话 {session_id} 获取到 {len(message_history)} 条消息历史")
 
             # 构建分析提示词
             prompt = await self._build_analysis_prompt(session_id)
+            self.logger.debug(f"会话 {session_id} 构建的分析提示词长度: {len(prompt)} 字符")
 
             # 调用LLM判断
             should_send, llm_response = await self._call_llm_for_decision(prompt)
@@ -47,6 +58,7 @@ class MessageAnalyzer:
             # 记录详细的决策结果
             decision = "发送主动消息" if should_send else "不发送主动消息"
             self.logger.info(f"会话 {session_id} LLM决策结果: {decision}")
+            self.logger.info(f"会话 {session_id} LLM完整回复: {llm_response}")
             
             return should_send
 
@@ -103,14 +115,46 @@ class MessageAnalyzer:
     async def _get_last_message_time(self, session_id: str) -> Optional[datetime]:
         """获取会话最后一条消息的时间"""
         try:
+            self.logger.debug(f"尝试获取会话 {session_id} 的最后消息时间")
+            
             # 尝试从消息存储中获取最后一条消息的时间
             if hasattr(self.context, 'message_manager'):
                 message_manager = self.context.message_manager
                 last_message = await message_manager.get_last_message(session_id)
                 if last_message and hasattr(last_message, 'timestamp'):
+                    self.logger.debug(f"会话 {session_id} 最后消息时间: {last_message.timestamp}")
                     return last_message.timestamp
+                else:
+                    self.logger.debug(f"会话 {session_id} 没有最后消息或消息没有时间戳")
+            else:
+                self.logger.warning(f"上下文中没有message_manager属性")
+                
+            # 尝试使用conversation_manager
+            if hasattr(self.context, 'conversation_manager'):
+                conversation_manager = self.context.conversation_manager
+                conversations = await conversation_manager.get_conversations()
+                
+                # 查找匹配的会话
+                for conv in conversations:
+                    if conv.user_id == session_id:
+                        # 获取该会话的消息
+                        if hasattr(conv, 'get_messages'):
+                            messages = await conv.get_messages(limit=1)
+                            if messages and len(messages) > 0:
+                                last_message = messages[0]
+                                if hasattr(last_message, 'timestamp'):
+                                    self.logger.debug(f"会话 {session_id} 最后消息时间(从conversation获取): {last_message.timestamp}")
+                                    return last_message.timestamp
+                                else:
+                                    self.logger.debug(f"会话 {session_id} 最后消息没有时间戳")
+                            else:
+                                self.logger.debug(f"会话 {session_id} 没有消息")
+                        break
+            else:
+                self.logger.warning(f"上下文中没有conversation_manager属性")
 
             # 如果没有消息管理器或获取失败，返回None
+            self.logger.warning(f"无法获取会话 {session_id} 的最后消息时间")
             return None
 
         except Exception as e:
@@ -120,10 +164,13 @@ class MessageAnalyzer:
     async def _get_message_history(self, session_id: str) -> List[Dict[str, Any]]:
         """获取消息历史"""
         try:
+            self.logger.debug(f"尝试获取会话 {session_id} 的消息历史")
+            
             # 尝试从消息存储中获取历史消息
             if hasattr(self.context, 'message_manager'):
                 message_manager = self.context.message_manager
                 messages = await message_manager.get_message_history(session_id, limit=10)
+                self.logger.debug(f"从message_manager获取到 {len(messages) if messages else 0} 条消息")
 
                 # 转换为标准格式
                 history = []
@@ -134,8 +181,39 @@ class MessageAnalyzer:
                         'timestamp': getattr(msg, 'timestamp', None)
                     })
                 return history
+            else:
+                self.logger.warning(f"上下文中没有message_manager属性")
+                
+            # 尝试使用conversation_manager
+            if hasattr(self.context, 'conversation_manager'):
+                conversation_manager = self.context.conversation_manager
+                conversations = await conversation_manager.get_conversations()
+                self.logger.debug(f"从conversation_manager获取到 {len(conversations) if conversations else 0} 个对话")
+                
+                # 查找匹配的会话
+                for conv in conversations:
+                    if conv.user_id == session_id:
+                        # 获取该会话的消息
+                        if hasattr(conv, 'get_messages'):
+                            messages = await conv.get_messages(limit=10)
+                            self.logger.debug(f"从conversation获取到 {len(messages) if messages else 0} 条消息")
+                            
+                            history = []
+                            for msg in messages:
+                                history.append({
+                                    'role': 'user' if hasattr(msg, 'is_user') and msg.is_user else 'bot',
+                                    'content': getattr(msg, 'content', ''),
+                                    'timestamp': getattr(msg, 'timestamp', None)
+                                })
+                            return history
+                        else:
+                            self.logger.warning(f"会话对象没有get_messages方法")
+                            break
+            else:
+                self.logger.warning(f"上下文中没有conversation_manager属性")
 
             # 如果没有消息管理器，返回空列表
+            self.logger.warning(f"无法获取会话 {session_id} 的消息历史")
             return []
 
         except Exception as e:
@@ -184,6 +262,8 @@ class MessageAnalyzer:
     async def _call_llm_for_decision(self, prompt: str) -> tuple[bool, str]:
         """调用LLM进行决策"""
         try:
+            self.logger.debug("开始调用LLM进行决策")
+            
             # 检查是否有LLM提供者
             if not hasattr(self.context, 'provider_manager') or not self.context.provider_manager:
                 self.logger.error("没有可用的LLM提供者")
@@ -195,6 +275,8 @@ class MessageAnalyzer:
                 self.logger.error("没有可用的LLM提供者")
                 return False, "没有可用的LLM提供者"
 
+            self.logger.debug(f"成功获取LLM提供者: {type(llm_provider).__name__}")
+
             # 构建消息
             messages = [
                 {"role": "system", "content": "你是一个智能对话分析助手，负责判断是否适合发送主动消息。"},
@@ -203,20 +285,29 @@ class MessageAnalyzer:
             
             # 记录给LLM的整体信息
             self.logger.debug(f"LLM决策请求 - 系统提示: 你是一个智能对话分析助手，负责判断是否适合发送主动消息。")
-            self.logger.debug(f"LLM决策请求 - 用户提示: {prompt}")
+            self.logger.debug(f"LLM决策请求 - 用户提示长度: {len(prompt)} 字符")
 
             # 调用LLM
+            self.logger.debug("正在调用LLM生成响应...")
             response = await llm_provider.generate(messages)
-            if not response or not response.completion_text:
-                self.logger.error("LLM响应为空")
-                return False, "LLM响应为空"
+            
+            if not response:
+                self.logger.error("LLM响应为None")
+                return False, "LLM响应为None"
+                
+            if not response.completion_text:
+                self.logger.error("LLM响应的completion_text为空")
+                return False, "LLM响应的completion_text为空"
 
             # 记录LLM的回复
             response_text = response.completion_text.strip()
             self.logger.debug(f"LLM决策回复: {response_text}")
+            
             if "^&YES&^" in response_text:
+                self.logger.info("LLM决策结果: 发送主动消息")
                 return True, response_text
             elif "^&NO&^" in response_text:
+                self.logger.info("LLM决策结果: 不发送主动消息")
                 return False, response_text
             else:
                 self.logger.warning(f"LLM返回了无法识别的响应: {response_text}")
