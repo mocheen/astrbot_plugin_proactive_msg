@@ -283,10 +283,17 @@ class ProactiveMsg(Star):
 
             self.logger.info(f"会话 {session_id} - 成功获取LLM提供者: {provider.meta().id}")
 
-            # 构建系统提示词 - 告诉主机器人这是一个主动消息请求
-            system_prompt = "你是一个智能对话助手。现在有一个AI助手提醒你给用户发送主动消息。请根据提供的提示，生成一个自然、友好的回复内容给用户。请直接输出回复内容，不要包含任何关于主动消息或AI助手的元信息。"
+            # 获取主机器人的默认人格配置作为系统提示词
+            try:
+                default_persona = await self.context.persona_manager.get_default_persona_v3()
+                system_prompt = default_persona.get("prompt", "You are a helpful and friendly assistant.")
+                self.logger.info(f"会话 {session_id} - 获取到主机器人默认人格，系统提示词长度: {len(system_prompt)} 字符")
+                self.logger.debug(f"会话 {session_id} - 主机器人系统提示词内容: {system_prompt}")
+            except Exception as e:
+                self.logger.warning(f"会话 {session_id} - 获取主机器人人格配置失败，使用默认提示词: {e}")
+                system_prompt = "You are a helpful and friendly assistant."
 
-            self.logger.info(f"会话 {session_id} - LLM系统提示词: {system_prompt}")
+            self.logger.info(f"会话 {session_id} - 使用主机器人原始人格作为系统提示词")
 
             # 调用LLM生成回复
             response = await provider.text_chat(
