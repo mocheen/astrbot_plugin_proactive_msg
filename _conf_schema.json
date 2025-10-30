@@ -31,5 +31,11 @@
     "type": "bool",
     "default": false,
     "hint": "启用后，仅对管理员ID的私聊会话发送主动消息"
+  },
+  "debug_trigger_on_init": {
+    "description": "初始化时触发调试轮询",
+    "type": "bool",
+    "default": false,
+    "hint": "启用后，每次重载插件时会立即触发一次轮询任务，方便调试功能"
   }
 }

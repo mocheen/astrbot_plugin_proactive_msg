@@ -32,8 +32,8 @@ class ProactiveMsg(Star):
 
         self.config = self.config_manager.get_all()
 
-        # 初始化 logger
-        self.logger = logging.getLogger(__name__)
+        # 使用AstrBot提供的logger
+        self.logger = logger
 
         # 检查时间感知配置
         self._check_datetime_config()
@@ -79,6 +79,15 @@ class ProactiveMsg(Star):
         else:
             self.logger.info("主动消息插件已启用通用模式，对所有私聊会话发送主动消息")
 
+        # 检查是否启用调试触发
+        if self.config_manager.debug_trigger_on_init:
+            self.logger.info("检测到调试触发模式，立即执行一次轮询任务...")
+            try:
+                await self._check_and_send_proactive_messages()
+                self.logger.info("调试轮询任务执行完成")
+            except Exception as e:
+                self.logger.error(f"调试轮询任务执行失败: {e}")
+
         self.logger.info(f"主动消息插件已启动，轮询间隔: {poll_interval}")
 
     async def terminate(self):
@@ -96,22 +105,46 @@ class ProactiveMsg(Star):
 
             # 检查是否仅对管理员会话启用
             admin_only = self.config_manager.admin_only
+            if admin_only:
+                self.logger.info("管理员模式已启用，仅检查管理员会话")
+
+            # 记录需要发送主动消息的会话
+            sessions_to_send = []
+            # 记录不需要发送主动消息的会话及原因
+            sessions_to_skip = {}
 
             for session_id in conversations:
                 try:
                     # 如果启用了仅管理员会话模式，检查当前会话是否来自管理员
                     if admin_only and not self._is_admin_conversation(session_id):
                         self.logger.debug(f"跳过非管理员会话 {session_id} (admin_only模式已启用)")
+                        sessions_to_skip[session_id] = "非管理员会话(admin_only模式)"
                         continue
 
                     should_send = await self.message_analyzer.should_send_proactive_message(session_id)
                     if should_send:
                         topic = await self.message_analyzer.get_proactive_topic(session_id)
                         if topic:
+                            sessions_to_send.append(session_id)
                             await self._send_proactive_message(session_id, topic)
+                        else:
+                            sessions_to_skip[session_id] = "未能生成有效话题"
+                    else:
+                        sessions_to_skip[session_id] = "LLM判断不需要发送主动消息"
                 except Exception as e:
                     self.logger.error(f"处理会话 {session_id} 时出现错误: {e}")
+                    sessions_to_skip[session_id] = f"处理异常: {str(e)}"
                     continue
+
+            # 记录轮询结果汇总
+            self.logger.info(f"轮询任务完成，共检查 {len(conversations)} 个会话")
+            if sessions_to_send:
+                self.logger.info(f"已向 {len(sessions_to_send)} 个会话发送主动消息: {', '.join(sessions_to_send)}")
+            else:
+                self.logger.info("本轮轮询没有会话需要发送主动消息")
+            
+            if sessions_to_skip:
+                self.logger.debug(f"跳过的会话及原因: {sessions_to_skip}")
 
         except Exception as e:
             self.logger.error(f"检查主动消息时出现错误: {e}")
