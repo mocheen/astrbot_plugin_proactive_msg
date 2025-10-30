@@ -262,20 +262,20 @@ class MessageAnalyzer:
     async def _call_llm_for_decision(self, prompt: str) -> tuple[bool, str]:
         """调用LLM进行决策"""
         try:
-            self.logger.debug("开始调用LLM进行决策")
+            self.logger.info("开始调用LLM进行决策")
             
             # 检查是否有LLM提供者
             if not hasattr(self.context, 'provider_manager') or not self.context.provider_manager:
-                self.logger.error("没有可用的LLM提供者")
+                self.logger.info("没有可用的LLM提供者")
                 return False, "没有可用的LLM提供者"
 
             # 获取LLM提供者
             llm_provider = self.context.provider_manager.get_llm_provider()
             if not llm_provider:
-                self.logger.error("没有可用的LLM提供者")
+                self.logger.info("没有可用的LLM提供者")
                 return False, "没有可用的LLM提供者"
 
-            self.logger.debug(f"成功获取LLM提供者: {type(llm_provider).__name__}")
+            self.logger.info(f"成功获取LLM提供者: {type(llm_provider).__name__}")
 
             # 构建消息
             messages = [
@@ -284,24 +284,24 @@ class MessageAnalyzer:
             ]
             
             # 记录给LLM的整体信息
-            self.logger.debug(f"LLM决策请求 - 系统提示: 你是一个智能对话分析助手，负责判断是否适合发送主动消息。")
-            self.logger.debug(f"LLM决策请求 - 用户提示长度: {len(prompt)} 字符")
+            self.logger.info(f"LLM决策请求 - 系统提示: 你是一个智能对话分析助手，负责判断是否适合发送主动消息。")
+            self.logger.info(f"LLM决策请求 - 用户提示长度: {len(prompt)} 字符")
 
             # 调用LLM
-            self.logger.debug("正在调用LLM生成响应...")
+            self.logger.info("正在调用LLM生成响应...")
             response = await llm_provider.generate(messages)
             
             if not response:
-                self.logger.error("LLM响应为None")
+                self.logger.info("LLM响应为None")
                 return False, "LLM响应为None"
                 
             if not response.completion_text:
-                self.logger.error("LLM响应的completion_text为空")
+                self.logger.info("LLM响应的completion_text为空")
                 return False, "LLM响应的completion_text为空"
 
             # 记录LLM的回复
             response_text = response.completion_text.strip()
-            self.logger.debug(f"LLM决策回复: {response_text}")
+            self.logger.info(f"LLM决策回复: {response_text}")
             
             if "^&YES&^" in response_text:
                 self.logger.info("LLM决策结果: 发送主动消息")
@@ -310,11 +310,11 @@ class MessageAnalyzer:
                 self.logger.info("LLM决策结果: 不发送主动消息")
                 return False, response_text
             else:
-                self.logger.warning(f"LLM返回了无法识别的响应: {response_text}")
+                self.logger.info(f"LLM返回了无法识别的响应: {response_text}")
                 return False, response_text
 
         except Exception as e:
-            self.logger.error(f"调用LLM进行决策时出现错误: {e}")
+            self.logger.info(f"调用LLM进行决策时出现错误: {e}")
             return False, f"调用LLM时出现错误: {str(e)}"
 
     async def _call_llm_for_topic(self, prompt: str) -> Optional[str]:
@@ -322,13 +322,13 @@ class MessageAnalyzer:
         try:
             # 检查是否有LLM提供者
             if not hasattr(self.context, 'provider_manager') or not self.context.provider_manager:
-                self.logger.error("没有可用的LLM提供者")
+                self.logger.info("没有可用的LLM提供者")
                 return None
 
             # 获取LLM提供者
             llm_provider = self.context.provider_manager.get_llm_provider()
             if not llm_provider:
-                self.logger.error("没有可用的LLM提供者")
+                self.logger.info("没有可用的LLM提供者")
                 return None
 
             # 构建消息
@@ -338,22 +338,22 @@ class MessageAnalyzer:
             ]
             
             # 记录给LLM的整体信息
-            self.logger.debug(f"LLM话题生成请求 - 系统提示: 你是一个智能话题生成助手，负责生成自然的对话话题。")
-            self.logger.debug(f"LLM话题生成请求 - 用户提示: {prompt}")
+            self.logger.info(f"LLM话题生成请求 - 系统提示: 你是一个智能话题生成助手，负责生成自然的对话话题。")
+            self.logger.info(f"LLM话题生成请求 - 用户提示: {prompt}")
 
             # 调用LLM
             response = await llm_provider.generate(messages)
             if not response or not response.completion_text:
-                self.logger.error("LLM响应为空")
+                self.logger.info("LLM响应为空")
                 return None
 
             # 记录LLM的回复
             response_text = response.completion_text.strip()
-            self.logger.debug(f"LLM话题生成回复: {response_text}")
+            self.logger.info(f"LLM话题生成回复: {response_text}")
             return response_text
 
         except Exception as e:
-            self.logger.error(f"调用LLM生成话题时出现错误: {e}")
+            self.logger.info(f"调用LLM生成话题时出现错误: {e}")
             return None
 
     def _parse_time_threshold(self, threshold: str) -> int:
