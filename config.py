@@ -23,7 +23,8 @@ class ConfigManager:
             "reply_frequency": "moderate",
             "enable_time_check": True,
             "admin_only": False,
-            "debug_trigger_on_init": True  # 默认启用调试触发，方便调试
+            "debug_trigger_on_init": True,  # 默认启用调试触发，方便调试
+            "debug_show_full_prompt": True  # 显示完整的提示词内容用于调试
         }
 
     def _load_config(self):
@@ -92,6 +93,11 @@ class ConfigManager:
     def debug_trigger_on_init(self) -> bool:
         """获取是否在初始化时触发调试轮询"""
         return self.get("debug_trigger_on_init", False)
+
+    @property
+    def debug_show_full_prompt(self) -> bool:
+        """获取是否显示完整提示词用于调试"""
+        return self.get("debug_show_full_prompt", True)
 
 
 # 全局配置管理器实例

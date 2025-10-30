@@ -164,51 +164,78 @@ class MessageAnalyzer:
     async def _get_message_history(self, session_id: str) -> List[Dict[str, Any]]:
         """获取消息历史"""
         try:
-            self.logger.debug(f"尝试获取会话 {session_id} 的消息历史")
-            
+            self.logger.info(f"开始获取会话 {session_id} 的消息历史")
+
             # 使用AstrBot核心系统的方式获取对话历史
             conversation_manager = self.context.conversation_manager
-            
+            self.logger.info(f"会话 {session_id} - 成功获取conversation_manager")
+
             # 获取当前会话ID
             conversation_id = await conversation_manager.get_curr_conversation_id(session_id)
+            self.logger.info(f"会话 {session_id} - 当前对话ID: {conversation_id}")
             if not conversation_id:
                 self.logger.warning(f"会话 {session_id} 没有对应的对话ID")
                 return []
-                
+
             # 获取对话对象
             conversation = await conversation_manager.get_conversation(session_id, conversation_id)
             if not conversation:
                 self.logger.warning(f"无法获取会话 {session_id} 的对话对象")
                 return []
-                
+
+            self.logger.info(f"会话 {session_id} - 成功获取对话对象")
+
             # 解析对话历史
             history_json = conversation.history
+            self.logger.info(f"会话 {session_id} - 原始历史数据长度: {len(history_json) if history_json else 0} 字符")
             if not history_json:
                 self.logger.warning(f"会话 {session_id} 的对话历史为空")
                 return []
-                
+
             # 解析JSON格式的对话历史
             import json
             try:
                 history_data = json.loads(history_json)
-                self.logger.debug(f"从conversation获取到 {len(history_data) if history_data else 0} 条消息")
+                self.logger.info(f"会话 {session_id} - 解析得到 {len(history_data) if history_data else 0} 条历史消息")
+
+                # 详细的调试信息
+                if self.config.get("debug_show_full_prompt", True) and history_data:
+                    self.logger.info(f"会话 {session_id} - 历史消息样例:")
+                    for i, msg in enumerate(history_data[:3]):  # 只显示前3条
+                        self.logger.info(f"  消息{i+1}: {msg}")
+
                 return history_data
             except json.JSONDecodeError as e:
                 self.logger.error(f"解析对话历史JSON失败: {e}")
+                self.logger.error(f"会话 {session_id} - 原始数据: {history_json[:200]}...")  # 显示前200字符
                 return []
 
         except Exception as e:
             self.logger.error(f"获取消息历史失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
             return []
 
     async def _build_analysis_prompt(self, session_id: str) -> str:
         """构建分析提示词"""
         message_history = await self._get_message_history(session_id)
 
-        # 构建上下文
+        # 获取当前时间信息
+        from datetime import datetime
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.logger.info(f"会话 {session_id} - 当前时间: {current_time}")
+
+        # 构建上下文 - 增强时间信息显示
         dialogue_history = "对话历史:\n"
         for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
-            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}: {msg.get('content', 'empty')}\n"
+            role = msg.get('role', 'unknown')
+            content = msg.get('content', 'empty')
+            # 尝试获取时间戳信息
+            timestamp = msg.get('timestamp', '')
+            if timestamp:
+                dialogue_history += f"{i+1}. [{timestamp}] {role}: {content}\n"
+            else:
+                dialogue_history += f"{i+1}. [时间未知] {role}: {content}\n"
 
         # 获取回复频率模式描述
         frequency_mode = self.config.get("reply_frequency", "moderate")
@@ -218,15 +245,26 @@ class MessageAnalyzer:
             "frequent": "频繁模式 - 平均1小时发送，误差正负半小时"
         }
 
-        # 使用提示词管理器生成提示词
-        time_info = '已启用时间感知' if self.enable_time_check else '未启用时间感知'
+        # 构建详细的时间信息
+        time_info = f"当前时间: {current_time} ({'已启用时间感知' if self.enable_time_check else '未启用时间感知'})"
         frequency_info = frequency_descriptions.get(frequency_mode, frequency_descriptions['moderate'])
 
-        return self.prompt_manager.get_analysis_prompt(
+        self.logger.info(f"会话 {session_id} - 时间信息: {time_info}")
+        self.logger.info(f"会话 {session_id} - 频率信息: {frequency_info}")
+
+        prompt = self.prompt_manager.get_analysis_prompt(
             dialogue_history,
             time_info,
             frequency_info
         )
+
+        # 根据配置决定是否记录完整的提示词内容用于调试
+        if self.config.get("debug_show_full_prompt", True):
+            self.logger.info(f"会话 {session_id} - 完整分析提示词:\n{prompt}")
+        else:
+            self.logger.info(f"会话 {session_id} - 提示词已生成（长度: {len(prompt)} 字符）")
+
+        return prompt
 
     async def _build_topic_prompt(self, session_id: str) -> str:
         """构建话题生成提示词"""
@@ -244,7 +282,7 @@ class MessageAnalyzer:
         """调用LLM进行决策"""
         try:
             self.logger.info("开始调用LLM进行决策")
-            
+
             # 获取LLM提供者 - 使用AstrBot核心系统的方式
             provider = self.context.get_using_provider()
             if not provider:
@@ -252,13 +290,19 @@ class MessageAnalyzer:
                 return False, "没有可用的LLM提供者"
 
             self.logger.info(f"成功获取LLM提供者: {provider.meta().id}")
-            
-            # 构建系统提示词
-            system_prompt = "你是一个智能对话分析助手，负责判断是否适合发送主动消息。请根据提供的对话历史和上下文信息，判断现在是否适合发送主动消息。请在回复中包含 ^&YES&^ 表示应该发送主动消息，或 ^&NO&^ 表示不应该发送主动消息。"
-            
-            # 记录给LLM的整体信息
+
+            # 构建系统提示词 - 增加时间信息
+            from datetime import datetime
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            system_prompt = f"你是一个智能对话分析助手，负责判断是否适合发送主动消息。当前时间: {current_time}。请根据提供的对话历史和上下文信息，判断现在是否适合发送主动消息。请在回复中包含 ^&YES&^ 表示应该发送主动消息，或 ^&NO&^ 表示不应该发送主动消息。"
+
+            # 详细记录给LLM的整体信息
             self.logger.info(f"LLM决策请求 - 系统提示: {system_prompt}")
             self.logger.info(f"LLM决策请求 - 用户提示长度: {len(prompt)} 字符")
+            if self.config.get("debug_show_full_prompt", True):
+                self.logger.info(f"LLM决策请求 - 完整用户提示:\n{prompt}")
+            else:
+                self.logger.info("LLM决策请求 - 用户提示内容已省略（可通过配置开启详细显示）")
 
             # 调用LLM - 使用AstrBot核心系统的方式
             self.logger.info("正在调用LLM生成响应...")
@@ -266,31 +310,31 @@ class MessageAnalyzer:
                 prompt=prompt,
                 system_prompt=system_prompt
             )
-            
+
             if not response:
-                self.logger.info("LLM响应为None")
+                self.logger.error("LLM响应为None")
                 return False, "LLM响应为None"
-                
+
             if not response.completion_text:
-                self.logger.info("LLM响应的completion_text为空")
+                self.logger.error("LLM响应的completion_text为空")
                 return False, "LLM响应的completion_text为空"
 
             # 记录LLM的回复
             response_text = response.completion_text.strip()
-            self.logger.info(f"LLM决策回复: {response_text}")
-            
+            self.logger.info(f"LLM决策完整回复: {response_text}")
+
             if "^&YES&^" in response_text:
-                self.logger.info("LLM决策结果: 发送主动消息")
+                self.logger.info("✅ LLM决策结果: 发送主动消息")
                 return True, response_text
             elif "^&NO&^" in response_text:
-                self.logger.info("LLM决策结果: 不发送主动消息")
+                self.logger.info("❌ LLM决策结果: 不发送主动消息")
                 return False, response_text
             else:
-                self.logger.info(f"LLM返回了无法识别的响应: {response_text}")
+                self.logger.warning(f"⚠️ LLM返回了无法识别的响应: {response_text}")
                 return False, response_text
 
         except Exception as e:
-            self.logger.info(f"调用LLM进行决策时出现错误: {e}")
+            self.logger.error(f"❌ 调用LLM进行决策时出现错误: {e}")
             return False, f"调用LLM时出现错误: {str(e)}"
 
     async def _call_llm_for_topic(self, prompt: str) -> Optional[str]:
