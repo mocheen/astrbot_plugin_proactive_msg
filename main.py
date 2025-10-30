@@ -273,12 +273,13 @@ class ProactiveMsg(Star):
             # 第三步：发送最终回复给用户
             message_chain = MessageChain([Plain(final_reply)])
 
-            # 使用Context的send_message方法发送主动消息
-            success = await self._send_message_to_user(session_id, message_chain)
-            if success:
+            # 获取平台适配器并发送消息
+            adapter = await self._get_platform_adapter(session_id)
+            if adapter:
+                await adapter.send_by_session(session_id, message_chain)
                 self.logger.info(f"会话 {session_id} - 主动消息已成功发送给用户")
             else:
-                self.logger.error(f"会话 {session_id} - 消息发送失败")
+                self.logger.error(f"会话 {session_id} - 无法获取平台适配器，消息发送失败")
 
         except Exception as e:
             self.logger.error(f"发送主动消息失败: {e}")
@@ -334,19 +335,48 @@ class ProactiveMsg(Star):
             self.logger.error(f"会话 {session_id} - 调用主机器人LLM时出现异常: {e}")
             return None
 
-    async def _send_message_to_user(self, session_id: str, message_chain):
-        """使用Context的send_message方法发送消息给用户"""
+    async def _get_platform_adapter(self, session_id: str):
+        """获取会话对应的平台适配器"""
         try:
-            self.logger.info(f"会话 {session_id} - 开始发送消息给用户")
-            self.logger.info(f"会话 {session_id} - 消息内容: {message_chain}")
+            self.logger.info(f"会话 {session_id} - 开始获取平台适配器")
 
-            # 使用Context的send_message方法发送主动消息
-            # session_id就是unified_msg_origin
-            await self.context.send_message(session_id, message_chain)
+            # 解析会话ID获取平台信息
+            # session_id格式: platform:message_type:user_id
+            parts = session_id.split(':')
+            if len(parts) < 3:
+                self.logger.error(f"会话 {session_id} - 会话ID格式不正确")
+                return None
 
-            self.logger.info(f"会话 {session_id} - 消息已成功发送给用户")
-            return True
+            platform_id = parts[0]
+            self.logger.info(f"会话 {session_id} - 识别到平台ID: {platform_id}")
+
+            # 获取所有平台适配器
+            adapters = self.context.get_all_platform_adapters()
+            if not adapters:
+                self.logger.error(f"会话 {session_id} - 没有可用的平台适配器")
+                return None
+
+            self.logger.info(f"会话 {session_id} - 获取到 {len(adapters)} 个平台适配器")
+
+            # 查找匹配的适配器
+            for adapter in adapters:
+                try:
+                    adapter_info = adapter.meta()
+                    adapter_platform = adapter_info.id
+
+                    self.logger.info(f"会话 {session_id} - 检查适配器: {adapter_platform}")
+
+                    if adapter_platform == platform_id:
+                        self.logger.info(f"会话 {session_id} - 成功找到匹配的平台适配器: {adapter_platform}")
+                        return adapter
+
+                except Exception as e:
+                    self.logger.warning(f"会话 {session_id} - 检查适配器时出错: {e}")
+                    continue
+
+            self.logger.error(f"会话 {session_id} - 未找到平台ID为 {platform_id} 的适配器")
+            return None
 
         except Exception as e:
-            self.logger.error(f"会话 {session_id} - 发送消息时出现异常: {e}")
-            return False
+            self.logger.error(f"会话 {session_id} - 获取平台适配器时出现异常: {e}")
+            return None
