@@ -78,6 +78,12 @@ class ProactiveMsg(Star):
         poll_interval = self.config.get("poll_interval", "10min")
         self.scheduler.add_job(self._check_and_send_proactive_messages, poll_interval)
 
+        # 输出管理员模式状态
+        if self.config_manager.admin_only():
+            self.logger.info("主动消息插件已启用管理员专用模式，仅对管理员会话发送主动消息")
+        else:
+            self.logger.info("主动消息插件已启用通用模式，对所有私聊会话发送主动消息")
+
         self.logger.info(f"主动消息插件已启动，轮询间隔: {poll_interval}")
 
     async def terminate(self):
@@ -93,8 +99,16 @@ class ProactiveMsg(Star):
             # 获取所有私聊会话
             conversations = await self._get_private_conversations()
 
+            # 检查是否仅对管理员会话启用
+            admin_only = self.config_manager.admin_only()
+
             for session_id in conversations:
                 try:
+                    # 如果启用了仅管理员会话模式，检查当前会话是否来自管理员
+                    if admin_only and not self._is_admin_conversation(session_id):
+                        self.logger.debug(f"跳过非管理员会话 {session_id} (admin_only模式已启用)")
+                        continue
+
                     should_send = await self.message_analyzer.should_send_proactive_message(session_id)
                     if should_send:
                         topic = await self.message_analyzer.get_proactive_topic(session_id)
@@ -132,6 +146,26 @@ class ProactiveMsg(Star):
             return hasattr(conversation, 'type') and conversation.type == 'private'
         except Exception as e:
             self.logger.error(f"判断会话类型失败: {e}")
+            return False
+
+    def _is_admin_conversation(self, session_id: str) -> bool:
+        """判断是否为管理员会话"""
+        try:
+            # 获取管理员ID列表
+            admins_id = self.context.get_config().get("admins_id", [])
+
+            # 从session_id中提取用户ID
+            # session_id格式通常是：platform:message_type:user_id 或 platform:GroupMessage:group_id:user_id
+            parts = session_id.split(':')
+            if len(parts) >= 3:
+                # 对于私聊，用户ID通常是最后一部分
+                # 对于群聊，需要更复杂的处理，但主动消息插件只处理私聊
+                user_id = parts[-1]
+                return user_id in admins_id
+
+            return False
+        except Exception as e:
+            self.logger.error(f"判断管理员会话失败: {e}")
             return False
 
     async def _send_proactive_message(self, session_id: str, topic: str):

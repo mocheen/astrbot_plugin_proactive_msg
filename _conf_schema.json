@@ -25,5 +25,11 @@
     "type": "bool",
     "default": true,
     "hint": "检查是否开启datetime_system_prompt配置，增强时间判断准确性"
+  },
+  "admin_only": {
+    "description": "仅管理员会话启用",
+    "type": "bool",
+    "default": false,
+    "hint": "启用后，仅对配置在管理员ID列表中的用户会话发送主动消息"
   }
 }
