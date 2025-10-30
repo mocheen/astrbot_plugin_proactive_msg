@@ -42,9 +42,12 @@ class MessageAnalyzer:
             prompt = await self._build_analysis_prompt(session_id)
 
             # 调用LLM判断
-            should_send = await self._call_llm_for_decision(prompt)
+            should_send, llm_response = await self._call_llm_for_decision(prompt)
 
-            self.logger.info(f"会话 {session_id} LLM决策结果: {'发送主动消息' if should_send else '不发送主动消息'}")
+            # 记录详细的决策结果
+            decision = "发送主动消息" if should_send else "不发送主动消息"
+            self.logger.info(f"会话 {session_id} LLM决策结果: {decision}")
+            
             return should_send
 
         except Exception as e:
@@ -54,17 +57,23 @@ class MessageAnalyzer:
     async def get_proactive_topic(self, session_id: str) -> Optional[str]:
         """第二步：生成主动消息话题（仅在第一步返回YES时调用）"""
         try:
-            # 构建话题生成提示词
-            prompt = await self._build_topic_prompt(session_id)
+            # 获取消息历史
+            dialogue_history = await self._get_message_history(session_id)
+            if not dialogue_history:
+                self.logger.warning(f"会话 {session_id} 没有消息历史，无法生成话题")
+                return None
+
+            # 构建话题提示词
+            prompt = await self._build_topic_prompt(dialogue_history)
 
             # 调用LLM生成话题
             topic = await self._call_llm_for_topic(prompt)
-
+            
             if topic:
-                self.logger.info(f"为会话 {session_id} 生成话题: {topic}")
+                self.logger.info(f"会话 {session_id} 生成话题: {topic}")
             else:
-                self.logger.warning(f"会话 {session_id} 未能生成话题")
-
+                self.logger.warning(f"会话 {session_id} 生成话题失败")
+            
             return topic
 
         except Exception as e:
@@ -172,19 +181,19 @@ class MessageAnalyzer:
         # 使用提示词管理器生成提示词
         return self.prompt_manager.get_topic_prompt(dialogue_history)
 
-    async def _call_llm_for_decision(self, prompt: str) -> bool:
+    async def _call_llm_for_decision(self, prompt: str) -> tuple[bool, str]:
         """调用LLM进行决策"""
         try:
             # 检查是否有LLM提供者
             if not hasattr(self.context, 'provider_manager') or not self.context.provider_manager:
                 self.logger.error("没有可用的LLM提供者")
-                return False
+                return False, "没有可用的LLM提供者"
 
             # 获取LLM提供者
             llm_provider = self.context.provider_manager.get_llm_provider()
             if not llm_provider:
                 self.logger.error("没有可用的LLM提供者")
-                return False
+                return False, "没有可用的LLM提供者"
 
             # 构建消息
             messages = [
@@ -196,21 +205,21 @@ class MessageAnalyzer:
             response = await llm_provider.generate(messages)
             if not response or not response.completion_text:
                 self.logger.error("LLM响应为空")
-                return False
+                return False, "LLM响应为空"
 
             # 解析响应
             response_text = response.completion_text.strip()
             if "^&YES&^" in response_text:
-                return True
+                return True, response_text
             elif "^&NO&^" in response_text:
-                return False
+                return False, response_text
             else:
                 self.logger.warning(f"LLM返回了无法识别的响应: {response_text}")
-                return False
+                return False, response_text
 
         except Exception as e:
             self.logger.error(f"调用LLM进行决策时出现错误: {e}")
-            return False
+            return False, f"调用LLM时出现错误: {str(e)}"
 
     async def _call_llm_for_topic(self, prompt: str) -> Optional[str]:
         """调用LLM生成话题"""

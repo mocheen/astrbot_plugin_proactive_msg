@@ -22,7 +22,8 @@ class ConfigManager:
             "no_message_threshold": "30min",
             "reply_frequency": "moderate",
             "enable_time_check": True,
-            "admin_only": False
+            "admin_only": False,
+            "debug_trigger_on_init": False
         }
 
     def _load_config(self):
@@ -86,6 +87,11 @@ class ConfigManager:
     def admin_only(self) -> bool:
         """获取是否仅对管理员会话启用"""
         return self.get("admin_only", False)
+
+    @property
+    def debug_trigger_on_init(self) -> bool:
+        """获取是否在初始化时触发调试轮询"""
+        return self.get("debug_trigger_on_init", False)
 
 
 # 全局配置管理器实例
