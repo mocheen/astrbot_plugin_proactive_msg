@@ -200,6 +200,10 @@ class MessageAnalyzer:
                 {"role": "system", "content": "你是一个智能对话分析助手，负责判断是否适合发送主动消息。"},
                 {"role": "user", "content": prompt}
             ]
+            
+            # 记录给LLM的整体信息
+            self.logger.debug(f"LLM决策请求 - 系统提示: 你是一个智能对话分析助手，负责判断是否适合发送主动消息。")
+            self.logger.debug(f"LLM决策请求 - 用户提示: {prompt}")
 
             # 调用LLM
             response = await llm_provider.generate(messages)
@@ -207,8 +211,9 @@ class MessageAnalyzer:
                 self.logger.error("LLM响应为空")
                 return False, "LLM响应为空"
 
-            # 解析响应
+            # 记录LLM的回复
             response_text = response.completion_text.strip()
+            self.logger.debug(f"LLM决策回复: {response_text}")
             if "^&YES&^" in response_text:
                 return True, response_text
             elif "^&NO&^" in response_text:
@@ -240,6 +245,10 @@ class MessageAnalyzer:
                 {"role": "system", "content": "你是一个智能话题生成助手，负责生成自然的对话话题。"},
                 {"role": "user", "content": prompt}
             ]
+            
+            # 记录给LLM的整体信息
+            self.logger.debug(f"LLM话题生成请求 - 系统提示: 你是一个智能话题生成助手，负责生成自然的对话话题。")
+            self.logger.debug(f"LLM话题生成请求 - 用户提示: {prompt}")
 
             # 调用LLM
             response = await llm_provider.generate(messages)
@@ -247,8 +256,9 @@ class MessageAnalyzer:
                 self.logger.error("LLM响应为空")
                 return None
 
-            # 提取话题内容
+            # 记录LLM的回复
             response_text = response.completion_text.strip()
+            self.logger.debug(f"LLM话题生成回复: {response_text}")
             return response_text
 
         except Exception as e:
