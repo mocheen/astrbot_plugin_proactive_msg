@@ -21,17 +21,17 @@ class PromptManager:
             "rare": {
                 "name": "稀少模式",
                 "description": "减少主动消息频率，适用于不希望打扰用户的场景",
-                "base_frequency": "平均1小时回复"
+                "base_frequency": "平均8小时回复，误差正负5小时"
             },
             "moderate": {
                 "name": "适中模式",
                 "description": "平衡的主动消息频率，适用于一般场景",
-                "base_frequency": "平均30分钟回复"
+                "base_frequency": "平均4小时回复，误差正负3小时"
             },
             "frequent": {
                 "name": "频繁模式",
                 "description": "增加主动消息频率，适用于需要高互动的场景",
-                "base_frequency": "平均10分钟回复"
+                "base_frequency": "平均1小时发送，误差正负半小时"
             }
         }
 

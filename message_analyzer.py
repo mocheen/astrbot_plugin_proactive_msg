@@ -213,9 +213,9 @@ class MessageAnalyzer:
         # 获取回复频率模式描述
         frequency_mode = self.config.get("reply_frequency", "moderate")
         frequency_descriptions = {
-            "rare": "稀少模式 - 平均8小时回复，误差正负5小时",
-            "moderate": "适中模式 - 平均4小时回复，误差正负3小时",
-            "frequent": "频繁模式 - 平均1小时回复，误差正负半小时"
+            "rare": "稀少模式 - 平均8小时发送，误差正负5小时",
+            "moderate": "适中模式 - 平均4小时发送，误差正负3小时",
+            "frequent": "频繁模式 - 平均1小时发送，误差正负半小时"
         }
 
         # 使用提示词管理器生成提示词

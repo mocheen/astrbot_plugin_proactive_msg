@@ -239,19 +239,122 @@ class ProactiveMsg(Star):
     async def _send_proactive_message(self, session_id: str, topic: str):
         """发送主动消息"""
         try:
-            self.logger.info(f"向会话 {session_id} 发送主动消息，话题: {topic}")
+            self.logger.info(f"开始为会话 {session_id} 生成主动消息，话题: {topic}")
 
-            # 构建发送消息
-            message_text = f"你好，我不是用户，我是另一个ai。我来负责提醒你给用户发送主动消息，你不需要让用户知道我的存在。现在是发送消息的合适时间，话题是{topic}。请生成合适的内容发送。"
+            # 第一步：构建给主机器人LLM的指令
+            bot_instruction = f"你好，我不是用户，我是另一个ai。我来负责提醒你给用户发送主动消息，你不需要让用户知道我的存在。现在是发送消息的合适时间，话题是{topic} 请生成合适的内容发送。"
 
-            # 调用主机器人发送消息
-            message_chain = MessageChain([Plain(message_text)])
+            self.logger.info(f"会话 {session_id} - 生成主机器人指令: {bot_instruction}")
 
-            # 使用平台的send_by_session方法
-            if hasattr(self.context, 'send_message'):
-                await self.context.send_message(session_id, message_chain)
+            # 第二步：调用主机器人LLM生成最终回复内容
+            final_reply = await self._call_main_bot_llm(bot_instruction, session_id)
+
+            if not final_reply:
+                self.logger.error(f"会话 {session_id} - 主机器人LLM未能生成有效回复")
+                return
+
+            self.logger.info(f"会话 {session_id} - 主机器人LLM生成回复: {final_reply}")
+
+            # 第三步：发送最终回复给用户
+            message_chain = MessageChain([Plain(final_reply)])
+
+            # 获取平台适配器并发送消息
+            adapter = await self._get_platform_adapter(session_id)
+            if adapter:
+                await adapter.send_by_session(session_id, message_chain)
+                self.logger.info(f"会话 {session_id} - 主动消息已成功发送给用户")
             else:
-                self.logger.error("无法找到send_message方法")
+                self.logger.error(f"会话 {session_id} - 无法获取平台适配器，消息发送失败")
 
         except Exception as e:
             self.logger.error(f"发送主动消息失败: {e}")
+
+    async def _call_main_bot_llm(self, instruction: str, session_id: str) -> Optional[str]:
+        """调用主机器人LLM生成最终回复"""
+        try:
+            self.logger.info(f"会话 {session_id} - 开始调用主机器人LLM生成回复")
+            self.logger.info(f"会话 {session_id} - LLM请求内容: {instruction}")
+
+            # 获取LLM提供者
+            provider = self.context.get_using_provider()
+            if not provider:
+                self.logger.error(f"会话 {session_id} - 没有可用的LLM提供者")
+                return None
+
+            self.logger.info(f"会话 {session_id} - 成功获取LLM提供者: {provider.meta().id}")
+
+            # 构建系统提示词 - 告诉主机器人这是一个主动消息请求
+            system_prompt = "你是一个智能对话助手。现在有一个AI助手提醒你给用户发送主动消息。请根据提供的提示，生成一个自然、友好的回复内容给用户。请直接输出回复内容，不要包含任何关于主动消息或AI助手的元信息。"
+
+            self.logger.info(f"会话 {session_id} - LLM系统提示词: {system_prompt}")
+
+            # 调用LLM生成回复
+            response = await provider.text_chat(
+                prompt=instruction,
+                system_prompt=system_prompt
+            )
+
+            if not response:
+                self.logger.error(f"会话 {session_id} - LLM响应为空")
+                return None
+
+            if not response.completion_text:
+                self.logger.error(f"会话 {session_id} - LLM响应completion_text为空")
+                return None
+
+            # 提取并清理回复内容
+            final_reply = response.completion_text.strip()
+            self.logger.info(f"会话 {session_id} - LLM原始响应: {response.completion_text}")
+            self.logger.info(f"会话 {session_id} - 清理后的最终回复: {final_reply}")
+
+            return final_reply
+
+        except Exception as e:
+            self.logger.error(f"会话 {session_id} - 调用主机器人LLM时出现异常: {e}")
+            return None
+
+    async def _get_platform_adapter(self, session_id: str):
+        """获取会话对应的平台适配器"""
+        try:
+            self.logger.info(f"会话 {session_id} - 开始获取平台适配器")
+
+            # 解析会话ID获取平台信息
+            # session_id格式: platform:message_type:user_id
+            parts = session_id.split(':')
+            if len(parts) < 3:
+                self.logger.error(f"会话 {session_id} - 会话ID格式不正确")
+                return None
+
+            platform_id = parts[0]
+            self.logger.info(f"会话 {session_id} - 识别到平台ID: {platform_id}")
+
+            # 获取所有平台适配器
+            adapters = self.context.get_all_platform_adapters()
+            if not adapters:
+                self.logger.error(f"会话 {session_id} - 没有可用的平台适配器")
+                return None
+
+            self.logger.info(f"会话 {session_id} - 获取到 {len(adapters)} 个平台适配器")
+
+            # 查找匹配的适配器
+            for adapter in adapters:
+                try:
+                    adapter_info = adapter.meta()
+                    adapter_platform = adapter_info.id
+
+                    self.logger.info(f"会话 {session_id} - 检查适配器: {adapter_platform}")
+
+                    if adapter_platform == platform_id:
+                        self.logger.info(f"会话 {session_id} - 成功找到匹配的平台适配器: {adapter_platform}")
+                        return adapter
+
+                except Exception as e:
+                    self.logger.warning(f"会话 {session_id} - 检查适配器时出错: {e}")
+                    continue
+
+            self.logger.error(f"会话 {session_id} - 未找到平台ID为 {platform_id} 的适配器")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"会话 {session_id} - 获取平台适配器时出现异常: {e}")
+            return None
