@@ -166,55 +166,36 @@ class MessageAnalyzer:
         try:
             self.logger.debug(f"尝试获取会话 {session_id} 的消息历史")
             
-            # 尝试从消息存储中获取历史消息
-            if hasattr(self.context, 'message_manager'):
-                message_manager = self.context.message_manager
-                messages = await message_manager.get_message_history(session_id, limit=10)
-                self.logger.debug(f"从message_manager获取到 {len(messages) if messages else 0} 条消息")
-
-                # 转换为标准格式
-                history = []
-                for msg in messages:
-                    history.append({
-                        'role': 'user' if hasattr(msg, 'is_user') and msg.is_user else 'bot',
-                        'content': getattr(msg, 'content', ''),
-                        'timestamp': getattr(msg, 'timestamp', None)
-                    })
-                return history
-            else:
-                self.logger.warning(f"上下文中没有message_manager属性")
+            # 使用AstrBot核心系统的方式获取对话历史
+            conversation_manager = self.context.conversation_manager
+            
+            # 获取当前会话ID
+            conversation_id = await conversation_manager.get_curr_conversation_id(session_id)
+            if not conversation_id:
+                self.logger.warning(f"会话 {session_id} 没有对应的对话ID")
+                return []
                 
-            # 尝试使用conversation_manager
-            if hasattr(self.context, 'conversation_manager'):
-                conversation_manager = self.context.conversation_manager
-                conversations = await conversation_manager.get_conversations()
-                self.logger.debug(f"从conversation_manager获取到 {len(conversations) if conversations else 0} 个对话")
+            # 获取对话对象
+            conversation = await conversation_manager.get_conversation(session_id, conversation_id)
+            if not conversation:
+                self.logger.warning(f"无法获取会话 {session_id} 的对话对象")
+                return []
                 
-                # 查找匹配的会话
-                for conv in conversations:
-                    if conv.user_id == session_id:
-                        # 获取该会话的消息
-                        if hasattr(conv, 'get_messages'):
-                            messages = await conv.get_messages(limit=10)
-                            self.logger.debug(f"从conversation获取到 {len(messages) if messages else 0} 条消息")
-                            
-                            history = []
-                            for msg in messages:
-                                history.append({
-                                    'role': 'user' if hasattr(msg, 'is_user') and msg.is_user else 'bot',
-                                    'content': getattr(msg, 'content', ''),
-                                    'timestamp': getattr(msg, 'timestamp', None)
-                                })
-                            return history
-                        else:
-                            self.logger.warning(f"会话对象没有get_messages方法")
-                            break
-            else:
-                self.logger.warning(f"上下文中没有conversation_manager属性")
-
-            # 如果没有消息管理器，返回空列表
-            self.logger.warning(f"无法获取会话 {session_id} 的消息历史")
-            return []
+            # 解析对话历史
+            history_json = conversation.history
+            if not history_json:
+                self.logger.warning(f"会话 {session_id} 的对话历史为空")
+                return []
+                
+            # 解析JSON格式的对话历史
+            import json
+            try:
+                history_data = json.loads(history_json)
+                self.logger.debug(f"从conversation获取到 {len(history_data) if history_data else 0} 条消息")
+                return history_data
+            except json.JSONDecodeError as e:
+                self.logger.error(f"解析对话历史JSON失败: {e}")
+                return []
 
         except Exception as e:
             self.logger.error(f"获取消息历史失败: {e}")
@@ -264,32 +245,27 @@ class MessageAnalyzer:
         try:
             self.logger.info("开始调用LLM进行决策")
             
-            # 检查是否有LLM提供者
-            if not hasattr(self.context, 'provider_manager') or not self.context.provider_manager:
+            # 获取LLM提供者 - 使用AstrBot核心系统的方式
+            provider = self.context.get_using_provider()
+            if not provider:
                 self.logger.info("没有可用的LLM提供者")
                 return False, "没有可用的LLM提供者"
 
-            # 获取LLM提供者
-            llm_provider = self.context.provider_manager.get_llm_provider()
-            if not llm_provider:
-                self.logger.info("没有可用的LLM提供者")
-                return False, "没有可用的LLM提供者"
-
-            self.logger.info(f"成功获取LLM提供者: {type(llm_provider).__name__}")
-
-            # 构建消息
-            messages = [
-                {"role": "system", "content": "你是一个智能对话分析助手，负责判断是否适合发送主动消息。"},
-                {"role": "user", "content": prompt}
-            ]
+            self.logger.info(f"成功获取LLM提供者: {provider.meta().id}")
+            
+            # 构建系统提示词
+            system_prompt = "你是一个智能对话分析助手，负责判断是否适合发送主动消息。请根据提供的对话历史和上下文信息，判断现在是否适合发送主动消息。请在回复中包含 ^&YES&^ 表示应该发送主动消息，或 ^&NO&^ 表示不应该发送主动消息。"
             
             # 记录给LLM的整体信息
-            self.logger.info(f"LLM决策请求 - 系统提示: 你是一个智能对话分析助手，负责判断是否适合发送主动消息。")
+            self.logger.info(f"LLM决策请求 - 系统提示: {system_prompt}")
             self.logger.info(f"LLM决策请求 - 用户提示长度: {len(prompt)} 字符")
 
-            # 调用LLM
+            # 调用LLM - 使用AstrBot核心系统的方式
             self.logger.info("正在调用LLM生成响应...")
-            response = await llm_provider.generate(messages)
+            response = await provider.text_chat(
+                prompt=prompt,
+                system_prompt=system_prompt
+            )
             
             if not response:
                 self.logger.info("LLM响应为None")
@@ -320,29 +296,25 @@ class MessageAnalyzer:
     async def _call_llm_for_topic(self, prompt: str) -> Optional[str]:
         """调用LLM生成话题"""
         try:
-            # 检查是否有LLM提供者
-            if not hasattr(self.context, 'provider_manager') or not self.context.provider_manager:
+            # 获取LLM提供者 - 使用AstrBot核心系统的方式
+            provider = self.context.get_using_provider()
+            if not provider:
                 self.logger.info("没有可用的LLM提供者")
                 return None
 
-            # 获取LLM提供者
-            llm_provider = self.context.provider_manager.get_llm_provider()
-            if not llm_provider:
-                self.logger.info("没有可用的LLM提供者")
-                return None
-
-            # 构建消息
-            messages = [
-                {"role": "system", "content": "你是一个智能话题生成助手，负责生成自然的对话话题。"},
-                {"role": "user", "content": prompt}
-            ]
+            # 构建系统提示词
+            system_prompt = "你是一个智能话题生成助手，负责生成自然的对话话题。请根据提供的对话历史，生成一个适合当前对话氛围的话题。话题应该自然、有趣，并且能够引导对话继续。"
             
             # 记录给LLM的整体信息
-            self.logger.info(f"LLM话题生成请求 - 系统提示: 你是一个智能话题生成助手，负责生成自然的对话话题。")
-            self.logger.info(f"LLM话题生成请求 - 用户提示: {prompt}")
+            self.logger.info(f"LLM话题生成请求 - 系统提示: {system_prompt}")
+            self.logger.info(f"LLM话题生成请求 - 用户提示长度: {len(prompt)} 字符")
 
-            # 调用LLM
-            response = await llm_provider.generate(messages)
+            # 调用LLM - 使用AstrBot核心系统的方式
+            response = await provider.text_chat(
+                prompt=prompt,
+                system_prompt=system_prompt
+            )
+            
             if not response or not response.completion_text:
                 self.logger.info("LLM响应为空")
                 return None
