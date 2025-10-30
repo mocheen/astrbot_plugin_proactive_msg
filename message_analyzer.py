@@ -33,83 +33,116 @@ class MessageAnalyzer:
         """第一步：判断是否应该发送主动消息"""
         try:
             self.logger.info(f"开始分析会话 {session_id} 是否需要发送主动消息")
-            
+
             # 检查最近是否有消息
+            self.logger.info(f"检查会话 {session_id} 最近是否有消息")
             has_recent_message = await self._has_recent_message(session_id)
             if has_recent_message:
                 self.logger.info(f"会话 {session_id} 最近有消息，跳过主动消息检查")
                 return False
+            else:
+                self.logger.info(f" 会话 {session_id} 最近没有消息，继续LLM分析")
 
             # 获取消息历史
+            self.logger.info(f" 获取会话 {session_id} 的消息历史")
             message_history = await self._get_message_history(session_id)
             if not message_history:
-                self.logger.warning(f"会话 {session_id} 没有消息历史，无法进行LLM分析")
+                self.logger.warning(f" 会话 {session_id} 没有消息历史，无法进行LLM分析")
                 return False
-                
-            self.logger.info(f"会话 {session_id} 获取到 {len(message_history)} 条消息历史")
+
+            self.logger.info(f" 会话 {session_id} 获取到 {len(message_history)} 条消息历史")
 
             # 构建分析提示词
+            self.logger.info(f" 构建会话 {session_id} 的分析提示词")
             prompt = await self._build_analysis_prompt(session_id)
-            self.logger.debug(f"会话 {session_id} 构建的分析提示词长度: {len(prompt)} 字符")
+            self.logger.info(f" 会话 {session_id} 分析提示词构建完成，长度: {len(prompt)} 字符")
 
             # 调用LLM判断
+            self.logger.info(f"调用LLM分析会话 {session_id}")
             should_send, llm_response = await self._call_llm_for_decision(prompt)
 
             # 记录详细的决策结果
             decision = "发送主动消息" if should_send else "不发送主动消息"
-            self.logger.info(f"会话 {session_id} LLM决策结果: {decision}")
+            self.logger.info(f" 会话 {session_id} LLM决策结果: {decision}")
             self.logger.info(f"会话 {session_id} LLM完整回复: {llm_response}")
-            
+
             return should_send
 
         except Exception as e:
-            self.logger.error(f"判断是否发送主动消息时出现错误: {e}")
+            self.logger.error(f"❌ [STEP1] 判断是否发送主动消息时出现错误: {e}")
+            import traceback
+            self.logger.error(f"❌ [STEP1] 详细错误信息: {traceback.format_exc()}")
             return False
 
     async def get_proactive_topic(self, session_id: str) -> Optional[str]:
         """第二步：生成主动消息话题（仅在第一步返回YES时调用）"""
         try:
+            self.logger.info(f"🚀 [STEP2] 开始为会话 {session_id} 生成主动话题")
+
             # 获取消息历史
+            self.logger.info(f"📚 [STEP2] 获取会话 {session_id} 的消息历史用于生成话题")
             dialogue_history = await self._get_message_history(session_id)
             if not dialogue_history:
-                self.logger.warning(f"会话 {session_id} 没有消息历史，无法生成话题")
+                self.logger.warning(f"⚠️ [STEP2] 会话 {session_id} 没有消息历史，无法生成话题")
                 return None
 
+            self.logger.info(f"✅ [STEP2] 会话 {session_id} 获取到 {len(dialogue_history)} 条消息历史用于生成话题")
+
             # 构建话题提示词
-            prompt = await self._build_topic_prompt(dialogue_history)
+            self.logger.info(f"🔨 [STEP2] 构建会话 {session_id} 的话题提示词")
+            prompt = await self._build_topic_prompt(session_id)
+            self.logger.info(f"✅ [STEP2] 会话 {session_id} 话题提示词构建完成，长度: {len(prompt)} 字符")
 
             # 调用LLM生成话题
+            self.logger.info(f"🤖 [STEP2] 调用LLM为会话 {session_id} 生成话题")
             topic = await self._call_llm_for_topic(prompt)
-            
+
             if topic:
-                self.logger.info(f"会话 {session_id} 生成话题: {topic}")
+                self.logger.info(f"✅ [STEP2] 会话 {session_id} 成功生成话题: {topic}")
             else:
-                self.logger.warning(f"会话 {session_id} 生成话题失败")
-            
+                self.logger.warning(f"❌ [STEP2] 会话 {session_id} 生成话题失败")
+
             return topic
 
         except Exception as e:
-            self.logger.error(f"生成主动消息话题时出现错误: {e}")
+            self.logger.error(f"❌ [STEP2] 生成主动消息话题时出现错误: {e}")
+            import traceback
+            self.logger.error(f"❌ [STEP2] 详细错误信息: {traceback.format_exc()}")
             return None
 
     async def _has_recent_message(self, session_id: str) -> bool:
         """检查会话是否有最近的消息"""
         try:
+            self.logger.info(f"🕐 [TIME_CHECK] 检查会话 {session_id} 最近消息时间")
+
             # 获取会话的最后一条消息时间
             last_message_time = await self._get_last_message_time(session_id)
+            self.logger.info(f"📅 [TIME_CHECK] 会话 {session_id} 最后消息时间: {last_message_time}")
 
             if not last_message_time:
+                self.logger.info(f"⚠️ [TIME_CHECK] 会话 {session_id} 没有最后消息时间记录")
                 return False
 
             # 计算时间差
             current_time = datetime.now()
             time_diff = current_time - last_message_time
+            threshold_seconds = self.no_message_threshold
+
+            self.logger.info(f"⏰ [TIME_CHECK] 会话 {session_id} 时间差: {time_diff} (阈值: {threshold_seconds}秒)")
 
             # 检查是否超过阈值
-            return time_diff < timedelta(seconds=self.no_message_threshold)
+            has_recent = time_diff < timedelta(seconds=threshold_seconds)
+            if has_recent:
+                self.logger.info(f"✅ [TIME_CHECK] 会话 {session_id} 有最近消息，跳过主动消息检查")
+            else:
+                self.logger.info(f"⏭️ [TIME_CHECK] 会话 {session_id} 没有最近消息，继续LLM分析")
+
+            return has_recent
 
         except Exception as e:
-            self.logger.error(f"检查最近消息失败: {e}")
+            self.logger.error(f"❌ [TIME_CHECK] 检查最近消息失败: {e}")
+            import traceback
+            self.logger.error(f"❌ [TIME_CHECK] 详细错误信息: {traceback.format_exc()}")
             return False
 
     async def _get_last_message_time(self, session_id: str) -> Optional[datetime]:

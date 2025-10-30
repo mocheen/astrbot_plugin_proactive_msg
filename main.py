@@ -81,12 +81,13 @@ class ProactiveMsg(Star):
 
         # 检查是否启用调试触发
         if self.config_manager.debug_trigger_on_init:
-            self.logger.info("检测到调试触发模式，立即执行一次轮询任务...")
+            self.logger.info("🔧 检测到调试触发模式，立即执行一次轮询任务...")
+            self.logger.info(f"🔧 调试模式配置: admin_only={self.config_manager.admin_only}, debug_show_full_prompt={self.config_manager.debug_show_full_prompt}")
             try:
                 await self._check_and_send_proactive_messages()
-                self.logger.info("调试轮询任务执行完成")
+                self.logger.info("🔧 调试轮询任务执行完成")
             except Exception as e:
-                self.logger.error(f"调试轮询任务执行失败: {e}")
+                self.logger.error(f"🔧 调试轮询任务执行失败: {e}")
 
         self.logger.info(f"主动消息插件已启动，轮询间隔: {poll_interval}")
 
@@ -121,15 +122,29 @@ class ProactiveMsg(Star):
                         sessions_to_skip[session_id] = "非管理员会话(admin_only模式)"
                         continue
 
+                    self.logger.info(f"🔍 [MAIN] 开始分析会话 {session_id} 是否需要发送主动消息")
+
+                    # 强制添加详细日志
+                    self.logger.info(f"🔍 [MAIN] 调用 should_send_proactive_message({session_id})")
                     should_send = await self.message_analyzer.should_send_proactive_message(session_id)
+                    self.logger.info(f"🔍 [MAIN] should_send_proactive_message 返回: {should_send}")
+
                     if should_send:
+                        self.logger.info(f"✅ [MAIN] 会话 {session_id} LLM判断需要发送主动消息，开始生成话题")
+                        self.logger.info(f"🔍 [MAIN] 调用 get_proactive_topic({session_id})")
                         topic = await self.message_analyzer.get_proactive_topic(session_id)
+                        self.logger.info(f"🔍 [MAIN] get_proactive_topic 返回: {topic}")
                         if topic:
+                            self.logger.info(f"✅ [MAIN] 会话 {session_id} 成功生成话题: {topic}")
                             sessions_to_send.append(session_id)
+                            self.logger.info(f"🔍 [MAIN] 调用 _send_proactive_message({session_id}, {topic})")
                             await self._send_proactive_message(session_id, topic)
+                            self.logger.info(f"🔍 [MAIN] _send_proactive_message 调用完成")
                         else:
+                            self.logger.warning(f"❌ [MAIN] 会话 {session_id} 未能生成有效话题")
                             sessions_to_skip[session_id] = "未能生成有效话题"
                     else:
+                        self.logger.info(f"❌ [MAIN] 会话 {session_id} LLM判断不需要发送主动消息")
                         sessions_to_skip[session_id] = "LLM判断不需要发送主动消息"
                 except Exception as e:
                     self.logger.error(f"处理会话 {session_id} 时出现错误: {e}")
