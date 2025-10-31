@@ -23,7 +23,9 @@ class ConfigManager:
             "reply_frequency": "moderate",
             "enable_time_check": True,
             "admin_only": False,
-            "debug_trigger_on_init": True  # 默认启用调试触发，方便调试
+            "debug_trigger_on_init": True,  # 默认启用调试触发，方便调试
+            "enable_timestamp_enhancement": True,  # 启用时间戳增强功能
+            "timestamp_enhancement_debug": False  # 时间戳增强调试模式
         }
 
     def _load_config(self):
@@ -92,6 +94,16 @@ class ConfigManager:
     def debug_trigger_on_init(self) -> bool:
         """获取是否在初始化时触发调试轮询"""
         return self.get("debug_trigger_on_init", False)
+
+    @property
+    def enable_timestamp_enhancement(self) -> bool:
+        """获取是否启用时间戳增强功能"""
+        return self.get("enable_timestamp_enhancement", True)
+
+    @property
+    def timestamp_enhancement_debug(self) -> bool:
+        """获取时间戳增强调试模式"""
+        return self.get("timestamp_enhancement_debug", False)
 
 
 # 全局配置管理器实例

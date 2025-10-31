@@ -4,13 +4,14 @@
 """
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 
 from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api.provider import LLMResponse
 from astrbot.api import logger
+from .message_history_enhancer import MessageHistoryEnhancer
 
 
 class MessageAnalyzer:
@@ -25,10 +26,14 @@ class MessageAnalyzer:
         # 配置项
         self.no_message_threshold = self._parse_time_threshold(config.get("no_message_threshold", "30min"))
         self.enable_time_check = config.get("enable_time_check", True)
+        self.enable_timestamp_enhancement = config.get("enable_timestamp_enhancement", True)
 
         # 引入提示词管理器
         from .prompt_manager import PromptManager
         self.prompt_manager = PromptManager(config)
+
+        # 初始化消息历史增强器
+        self.history_enhancer = MessageHistoryEnhancer(context)
 
     async def should_send_proactive_message(self, session_id: str) -> bool:
         """第一步：判断是否应该发送主动消息"""
@@ -165,28 +170,35 @@ class MessageAnalyzer:
         """获取消息历史"""
         try:
             self.logger.debug(f"尝试获取会话 {session_id} 的消息历史")
-            
-            # 使用AstrBot核心系统的方式获取对话历史
+
+            if self.enable_timestamp_enhancement:
+                # 使用增强器获取带时间戳的消息历史
+                enhanced_history = await self.history_enhancer.get_enhanced_conversation_history(session_id, limit=10)
+                if enhanced_history:
+                    self.logger.debug(f"使用增强器获取到 {len(enhanced_history)} 条带时间戳的消息")
+                    return enhanced_history
+
+            # 回退到原始方法
             conversation_manager = self.context.conversation_manager
-            
+
             # 获取当前会话ID
             conversation_id = await conversation_manager.get_curr_conversation_id(session_id)
             if not conversation_id:
                 self.logger.warning(f"会话 {session_id} 没有对应的对话ID")
                 return []
-                
+
             # 获取对话对象
             conversation = await conversation_manager.get_conversation(session_id, conversation_id)
             if not conversation:
                 self.logger.warning(f"无法获取会话 {session_id} 的对话对象")
                 return []
-                
+
             # 解析对话历史
             history_json = conversation.history
             if not history_json:
                 self.logger.warning(f"会话 {session_id} 的对话历史为空")
                 return []
-                
+
             # 解析JSON格式的对话历史
             import json
             try:
@@ -209,21 +221,11 @@ class MessageAnalyzer:
         dialogue_history = "对话历史:\n"
         for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
             # 添加时间信息（如果存在）
-            timestamp = ""
+            timestamp_str = ""
             if 'timestamp' in msg:
-                # 将时间戳转换为可读格式
-                try:
-                    from datetime import datetime
-                    if isinstance(msg['timestamp'], (int, float)):
-                        dt = datetime.fromtimestamp(msg['timestamp'])
-                        timestamp = f" [{dt.strftime('%Y-%m-%d %H:%M:%S')}]"
-                    elif isinstance(msg['timestamp'], str):
-                        timestamp = f" [{msg['timestamp']}]"
-                except Exception as e:
-                    self.logger.warning(f"解析时间戳失败: {e}")
-                    timestamp = ""
+                timestamp_str = f" [{self.history_enhancer.format_timestamp(msg['timestamp'])}]"
 
-            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}{timestamp}: {msg.get('content', 'empty')}\n"
+            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}{timestamp_str}: {msg.get('content', 'empty')}\n"
 
         # 获取回复频率模式描述
         frequency_mode = self.config.get("reply_frequency", "moderate")
@@ -255,21 +257,11 @@ class MessageAnalyzer:
         dialogue_history = "对话历史:\n"
         for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
             # 添加时间信息（如果存在）
-            timestamp = ""
+            timestamp_str = ""
             if 'timestamp' in msg:
-                # 将时间戳转换为可读格式
-                try:
-                    from datetime import datetime
-                    if isinstance(msg['timestamp'], (int, float)):
-                        dt = datetime.fromtimestamp(msg['timestamp'])
-                        timestamp = f" [{dt.strftime('%Y-%m-%d %H:%M:%S')}]"
-                    elif isinstance(msg['timestamp'], str):
-                        timestamp = f" [{msg['timestamp']}]"
-                except Exception as e:
-                    self.logger.warning(f"解析时间戳失败: {e}")
-                    timestamp = ""
+                timestamp_str = f" [{self.history_enhancer.format_timestamp(msg['timestamp'])}]"
 
-            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}{timestamp}: {msg.get('content', 'empty')}\n"
+            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}{timestamp_str}: {msg.get('content', 'empty')}\n"
 
         # 使用提示词管理器生成用户提示词
         return self.prompt_manager.get_topic_prompt(dialogue_history)

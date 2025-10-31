@@ -17,6 +17,7 @@ from .config import config_manager
 from .scheduler import SchedulerManager
 from .message_analyzer import MessageAnalyzer
 from .prompt_manager import PromptManager
+from .message_history_enhancer import MessageHistoryEnhancer
 
 
 @register("proactive_msg", "主动消息插件", "使 bot 在用户长时间未发送消息时主动与用户对话", "1.0")
@@ -46,6 +47,9 @@ class ProactiveMsg(Star):
 
         # 初始化提示词管理器
         self.prompt_manager = PromptManager(self.config)
+
+        # 初始化消息历史增强器
+        self.history_enhancer = MessageHistoryEnhancer(self.context)
 
         self.logger.info("主动消息插件初始化完成")
 
@@ -249,6 +253,10 @@ class ProactiveMsg(Star):
 
             self.logger.info(f"会话 {session_id} - 主机器人LLM生成回复: {final_reply}")
 
+            # 如果启用了时间戳增强，将主动消息保存到对话历史
+            if self.config_manager.enable_timestamp_enhancement:
+                await self._save_message_to_history(session_id, "assistant", final_reply)
+
             # 第三步：发送最终回复给用户
             message_chain = MessageChain([Plain(final_reply)])
 
@@ -319,3 +327,33 @@ class ProactiveMsg(Star):
         except Exception as e:
             self.logger.error(f"会话 {session_id} - 发送消息时出现异常: {e}")
             return False
+
+    async def _save_message_to_history(self, session_id: str, role: str, content: str):
+        """保存消息到对话历史（带时间戳）"""
+        try:
+            if not self.config_manager.enable_timestamp_enhancement:
+                return
+
+            # 获取当前对话ID
+            conversation_manager = self.context.conversation_manager
+            conversation_id = await conversation_manager.get_curr_conversation_id(session_id)
+
+            if not conversation_id:
+                self.logger.warning(f"会话 {session_id} 没有当前对话，无法保存消息")
+                return
+
+            # 使用增强器保存带时间戳的消息
+            success = await self.history_enhancer.add_message_with_timestamp(
+                conversation_id=conversation_id,
+                role=role,
+                content=content
+            )
+
+            if success:
+                if self.config_manager.timestamp_enhancement_debug:
+                    self.logger.debug(f"已保存消息到对话历史: {role} - {content[:50]}...")
+            else:
+                self.logger.warning(f"保存消息到对话历史失败")
+
+        except Exception as e:
+            self.logger.error(f"保存消息到对话历史时出现异常: {e}")
