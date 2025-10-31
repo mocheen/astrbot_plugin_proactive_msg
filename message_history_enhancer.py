@@ -4,6 +4,7 @@
 """
 import time
 import json
+import zoneinfo
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from astrbot.api import logger
@@ -17,6 +18,67 @@ class MessageHistoryEnhancer:
         self.context = context
         self.db = context.get_db()
         self.conversation_manager = context.conversation_manager
+
+    def get_current_time(self) -> datetime:
+        """获取当前时间（使用AstrBot的时区配置）"""
+        try:
+            cfg = self.context.get_config()
+            timezone_str = cfg.get("timezone")
+
+            if timezone_str:
+                try:
+                    # 使用配置的时区
+                    return datetime.now(zoneinfo.ZoneInfo(timezone_str))
+                except Exception as e:
+                    logger.error(f"时区设置错误: {e}, 回退到本地时区")
+
+            # 回退到本地时区
+            return datetime.now().astimezone()
+        except Exception as e:
+            logger.error(f"获取当前时间失败: {e}")
+            return datetime.now().astimezone()
+
+    def format_timestamp_with_timezone(self, timestamp: Any) -> str:
+        """根据配置的时区格式化时间戳"""
+        if not timestamp:
+            return ""
+
+        try:
+            # 获取配置的时区
+            cfg = self.context.get_config()
+            timezone_str = cfg.get("timezone")
+
+            if isinstance(timestamp, (int, float)):
+                # 首先创建UTC时间
+                dt_utc = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+
+                if timezone_str:
+                    # 转换到配置的时区
+                    dt_local = dt_utc.astimezone(zoneinfo.ZoneInfo(timezone_str))
+                else:
+                    # 使用本地时区
+                    dt_local = dt_utc.astimezone()
+
+                return dt_local.strftime("%Y-%m-%d %H:%M:%S")
+
+            elif isinstance(timestamp, str):
+                # 尝试解析字符串时间戳
+                try:
+                    dt_utc = datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
+
+                    if timezone_str:
+                        dt_local = dt_utc.astimezone(zoneinfo.ZoneInfo(timezone_str))
+                    else:
+                        dt_local = dt_utc.astimezone()
+
+                    return dt_local.strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    return timestamp
+            else:
+                return str(timestamp)
+        except Exception as e:
+            logger.warning(f"格式化时间戳失败: {e}")
+            return str(timestamp)
 
     async def enhance_message_history(self, conversation_id: str) -> List[Dict[str, Any]]:
         """为指定对话的历史消息添加时间戳
@@ -144,29 +206,15 @@ class MessageHistoryEnhancer:
             return False
 
     def format_timestamp(self, timestamp: Any) -> str:
-        """格式化时间戳为可读字符串"""
-        if not timestamp:
-            return ""
-
-        try:
-            if isinstance(timestamp, (int, float)):
-                dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-                return dt.strftime("%Y-%m-%d %H:%M:%S")
-            elif isinstance(timestamp, str):
-                # 尝试解析字符串时间戳
-                try:
-                    dt = datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
-                    return dt.strftime("%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    return timestamp
-            else:
-                return str(timestamp)
-        except Exception as e:
-            logger.warning(f"格式化时间戳失败: {e}")
-            return str(timestamp)
+        """格式化时间戳为可读字符串（考虑时区）"""
+        return self.format_timestamp_with_timezone(timestamp)
 
     def get_time_period_description(self, dt: datetime) -> str:
-        """获取时间段描述"""
+        """获取时间段描述（考虑时区）"""
+        # 如果是naive datetime（无时区信息），转换为本地时区
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+
         hour = dt.hour
 
         if 5 <= hour < 8:

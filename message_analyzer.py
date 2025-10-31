@@ -4,6 +4,7 @@
 """
 import asyncio
 import time
+import zoneinfo
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 
@@ -237,8 +238,27 @@ class MessageAnalyzer:
 
         # 使用提示词管理器生成用户提示词
         if self.enable_time_check:
-            current_time = datetime.now()
-            time_info = f'当前时间: {current_time.strftime("%Y-%m-%d %H:%M:%S")} ({self._get_time_period(current_time)})'
+            if self.enable_timestamp_enhancement:
+                # 使用增强器的时区感知功能
+                current_time = self.history_enhancer.get_current_time()
+                time_str = self.history_enhancer.format_timestamp_with_timezone(int(current_time.timestamp()))
+                period_str = self.history_enhancer.get_time_period_description(current_time)
+                time_info = f'当前时间: {time_str} ({period_str})'
+            else:
+                # 使用AstrBot的时区处理方式
+                cfg = self.context.get_config()
+                timezone_str = cfg.get("timezone")
+
+                if timezone_str:
+                    try:
+                        current_time = datetime.now(zoneinfo.ZoneInfo(timezone_str))
+                    except Exception as e:
+                        logger.error(f"时区设置错误: {e}, 回退到本地时区")
+                        current_time = datetime.now().astimezone()
+                else:
+                    current_time = datetime.now().astimezone()
+
+                time_info = f'当前时间: {current_time.strftime("%Y-%m-%d %H:%M:%S")} ({self._get_time_period(current_time)})'
         else:
             time_info = '未启用时间感知'
         frequency_info = frequency_descriptions.get(frequency_mode, frequency_descriptions['moderate'])
