@@ -102,69 +102,95 @@ class MessageAnalyzer:
         """检查会话是否有最近的消息"""
         try:
             # 获取会话的最后一条消息时间
-            last_message_time = await self._get_last_message_time(session_id)
+            last_message_timestamp = await self._get_last_message_time(session_id)
 
-            if not last_message_time:
+            if not last_message_timestamp:
                 return False
 
             # 计算时间差
-            current_time = datetime.now()
-            time_diff = current_time - last_message_time
+            current_timestamp = int(time.time())
+            time_diff = current_timestamp - last_message_timestamp
 
             # 检查是否超过阈值
-            return time_diff < timedelta(seconds=self.no_message_threshold)
+            return time_diff < self.no_message_threshold
 
         except Exception as e:
             self.logger.error(f"检查最近消息失败: {e}")
             return False
 
-    async def _get_last_message_time(self, session_id: str) -> Optional[datetime]:
-        """获取会话最后一条消息的时间"""
+    async def _get_last_message_time(self, session_id: str) -> Optional[int]:
+        """获取会话的最后一条消息时间戳"""
         try:
-            self.logger.debug(f"尝试获取会话 {session_id} 的最后消息时间")
+            # 首先尝试通过 conversation_manager 获取会话历史
+            conversation_manager = self.context.get_conversation_manager()
+            if not conversation_manager:
+                self.logger.error("无法获取 conversation_manager")
+                return None
+
+            # 获取会话历史
+            conversation = await conversation_manager.get_conversation(session_id)
+            if not conversation:
+                self.logger.warning(f"未找到会话 {session_id}")
+                return None
+
+            # 检查会话是否有历史记录
+            if hasattr(conversation, 'history') and conversation.history:
+                try:
+                    # 尝试解析历史记录
+                    import json
+                    history_data = json.loads(conversation.history) if isinstance(conversation.history, str) else conversation.history
+                    
+                    if history_data and len(history_data) > 0:
+                        # 获取最后一条消息
+                        last_message = history_data[-1]
+                        
+                        # 检查是否有时间戳
+                        if 'timestamp' in last_message:
+                            timestamp = last_message['timestamp']
+                            self.logger.debug(f"从会话历史获取到时间戳: {timestamp}")
+                            return int(timestamp)
+                        
+                        # 如果没有时间戳，尝试从其他字段获取
+                        if 'time' in last_message:
+                            timestamp = last_message['time']
+                            self.logger.debug(f"从会话历史获取到时间戳(time字段): {timestamp}")
+                            return int(timestamp)
+                            
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    self.logger.error(f"解析会话历史失败: {e}")
             
-            # 尝试从消息存储中获取最后一条消息的时间
-            if hasattr(self.context, 'message_manager'):
-                message_manager = self.context.message_manager
-                last_message = await message_manager.get_last_message(session_id)
-                if last_message and hasattr(last_message, 'timestamp'):
-                    self.logger.debug(f"会话 {session_id} 最后消息时间: {last_message.timestamp}")
-                    return last_message.timestamp
-                else:
-                    self.logger.debug(f"会话 {session_id} 没有最后消息或消息没有时间戳")
-            else:
-                self.logger.warning(f"上下文中没有message_manager属性")
+            # 如果会话历史中没有时间戳，尝试使用会话的更新时间
+            if hasattr(conversation, 'updated_at') and conversation.updated_at:
+                self.logger.debug(f"使用会话的updated_at作为时间戳: {conversation.updated_at}")
+                return int(conversation.updated_at)
+            
+            # 如果会话有created_at字段，也可以使用
+            if hasattr(conversation, 'created_at') and conversation.created_at:
+                self.logger.debug(f"使用会话的created_at作为时间戳: {conversation.created_at}")
+                return int(conversation.created_at)
                 
-            # 尝试使用conversation_manager
-            if hasattr(self.context, 'conversation_manager'):
-                conversation_manager = self.context.conversation_manager
-                conversations = await conversation_manager.get_conversations()
-                
-                # 查找匹配的会话
-                for conv in conversations:
-                    if conv.user_id == session_id:
-                        # 获取该会话的消息
-                        if hasattr(conv, 'get_messages'):
-                            messages = await conv.get_messages(limit=1)
-                            if messages and len(messages) > 0:
-                                last_message = messages[0]
-                                if hasattr(last_message, 'timestamp'):
-                                    self.logger.debug(f"会话 {session_id} 最后消息时间(从conversation获取): {last_message.timestamp}")
-                                    return last_message.timestamp
-                                else:
-                                    self.logger.debug(f"会话 {session_id} 最后消息没有时间戳")
-                            else:
-                                self.logger.debug(f"会话 {session_id} 没有消息")
-                        break
-            else:
-                self.logger.warning(f"上下文中没有conversation_manager属性")
-
-            # 如果没有消息管理器或获取失败，返回None
-            self.logger.warning(f"无法获取会话 {session_id} 的最后消息时间")
+            # 尝试通过 platform_message_history_manager 获取
+            try:
+                platform_message_history_manager = self.context.get_platform_message_history_manager()
+                if platform_message_history_manager:
+                    # 获取该会话的最新消息
+                    platform_id = session_id.split('_')[0] if '_' in session_id else session_id
+                    user_id = session_id.split('_')[1] if '_' in session_id else 'default'
+                    
+                    history = await platform_message_history_manager.get_platform_message_history(platform_id, user_id, limit=1)
+                    if history and len(history) > 0:
+                        last_message = history[0]
+                        if hasattr(last_message, 'created_at') and last_message.created_at:
+                            self.logger.debug(f"从平台消息历史获取到时间戳: {last_message.created_at}")
+                            return int(last_message.created_at)
+            except Exception as e:
+                self.logger.error(f"从平台消息历史获取时间戳失败: {e}")
+            
+            self.logger.warning("无法获取最后一条消息的时间戳")
             return None
-
+            
         except Exception as e:
-            self.logger.error(f"获取最后消息时间失败: {e}")
+            self.logger.error(f"获取最后一条消息时间时出错: {e}")
             return None
 
     async def _get_message_history(self, session_id: str) -> List[Dict[str, Any]]:
