@@ -17,6 +17,7 @@ from .config import config_manager
 from .scheduler import SchedulerManager
 from .message_analyzer import MessageAnalyzer
 from .prompt_manager import PromptManager
+from .message_history_enhancer import MessageHistoryEnhancer
 
 
 @register("proactive_msg", "主动消息插件", "使 bot 在用户长时间未发送消息时主动与用户对话", "1.0")
@@ -46,6 +47,9 @@ class ProactiveMsg(Star):
 
         # 初始化提示词管理器
         self.prompt_manager = PromptManager(self.config)
+
+        # 初始化消息历史增强器
+        self.history_enhancer = MessageHistoryEnhancer(self.context)
 
         self.logger.info("主动消息插件初始化完成")
 
@@ -81,10 +85,8 @@ class ProactiveMsg(Star):
 
         # 检查是否启用调试触发
         if self.config_manager.debug_trigger_on_init:
-            self.logger.info("检测到调试触发模式，立即执行一次轮询任务...")
             try:
                 await self._check_and_send_proactive_messages()
-                self.logger.info("调试轮询任务执行完成")
             except Exception as e:
                 self.logger.error(f"调试轮询任务执行失败: {e}")
 
@@ -144,7 +146,6 @@ class ProactiveMsg(Star):
                 self.logger.info("本轮轮询没有会话需要发送主动消息")
             
             if sessions_to_skip:
-                # 将debug级别改为info级别，以便在日志中显示详细拒绝原因
                 self.logger.info(f"跳过的会话及原因: {sessions_to_skip}")
 
         except Exception as e:
@@ -187,7 +188,6 @@ class ProactiveMsg(Star):
                     continue
             
             result = list(private_sessions)
-            self.logger.info(f"找到 {len(result)} 个私聊会话: {result}")
             return result
         except Exception as e:
             self.logger.error(f"获取私聊会话失败: {e}")
@@ -244,8 +244,6 @@ class ProactiveMsg(Star):
             # 第一步：构建给主机器人LLM的指令
             bot_instruction = f"你好，我不是用户，我是另一个ai。我来负责提醒你给用户发送主动消息，你不需要让用户知道我的存在。现在是发送消息的合适时间，话题是{topic} 请生成合适的内容发送。"
 
-            self.logger.info(f"会话 {session_id} - 生成主机器人指令: {bot_instruction}")
-
             # 第二步：调用主机器人LLM生成最终回复内容
             final_reply = await self._call_main_bot_llm(bot_instruction, session_id)
 
@@ -254,6 +252,10 @@ class ProactiveMsg(Star):
                 return
 
             self.logger.info(f"会话 {session_id} - 主机器人LLM生成回复: {final_reply}")
+
+            # 如果启用了时间戳增强，将主动消息保存到对话历史
+            if self.config_manager.enable_timestamp_enhancement:
+                await self._save_message_to_history(session_id, "assistant", final_reply)
 
             # 第三步：发送最终回复给用户
             message_chain = MessageChain([Plain(final_reply)])
@@ -271,7 +273,6 @@ class ProactiveMsg(Star):
     async def _call_main_bot_llm(self, instruction: str, session_id: str) -> Optional[str]:
         """调用主机器人LLM生成最终回复"""
         try:
-            self.logger.info(f"会话 {session_id} - 开始调用主机器人LLM生成回复")
             self.logger.info(f"会话 {session_id} - LLM请求内容: {instruction}")
 
             # 获取LLM提供者
@@ -280,19 +281,13 @@ class ProactiveMsg(Star):
                 self.logger.error(f"会话 {session_id} - 没有可用的LLM提供者")
                 return None
 
-            self.logger.info(f"会话 {session_id} - 成功获取LLM提供者: {provider.meta().id}")
-
             # 获取主机器人的默认人格配置作为系统提示词
             try:
                 default_persona = await self.context.persona_manager.get_default_persona_v3()
                 system_prompt = default_persona.get("prompt", "You are a helpful and friendly assistant.")
-                self.logger.info(f"会话 {session_id} - 获取到主机器人默认人格，系统提示词长度: {len(system_prompt)} 字符")
-                self.logger.debug(f"会话 {session_id} - 主机器人系统提示词内容: {system_prompt}")
             except Exception as e:
                 self.logger.warning(f"会话 {session_id} - 获取主机器人人格配置失败，使用默认提示词: {e}")
                 system_prompt = "You are a helpful and friendly assistant."
-
-            self.logger.info(f"会话 {session_id} - 使用主机器人原始人格作为系统提示词")
 
             # 调用LLM生成回复
             response = await provider.text_chat(
@@ -311,7 +306,6 @@ class ProactiveMsg(Star):
             # 提取并清理回复内容
             final_reply = response.completion_text.strip()
             self.logger.info(f"会话 {session_id} - LLM原始响应: {response.completion_text}")
-            self.logger.info(f"会话 {session_id} - 清理后的最终回复: {final_reply}")
 
             return final_reply
 
@@ -322,8 +316,6 @@ class ProactiveMsg(Star):
     async def _send_message_to_user(self, session_id: str, message_chain):
         """使用Context的send_message方法发送消息给用户"""
         try:
-            self.logger.info(f"会话 {session_id} - 开始发送消息给用户")
-            self.logger.info(f"会话 {session_id} - 消息内容: {message_chain}")
 
             # 使用Context的send_message方法发送主动消息
             # session_id就是unified_msg_origin
@@ -335,3 +327,33 @@ class ProactiveMsg(Star):
         except Exception as e:
             self.logger.error(f"会话 {session_id} - 发送消息时出现异常: {e}")
             return False
+
+    async def _save_message_to_history(self, session_id: str, role: str, content: str):
+        """保存消息到对话历史（带时间戳）"""
+        try:
+            if not self.config_manager.enable_timestamp_enhancement:
+                return
+
+            # 获取当前对话ID
+            conversation_manager = self.context.conversation_manager
+            conversation_id = await conversation_manager.get_curr_conversation_id(session_id)
+
+            if not conversation_id:
+                self.logger.warning(f"会话 {session_id} 没有当前对话，无法保存消息")
+                return
+
+            # 使用增强器保存带时间戳的消息
+            success = await self.history_enhancer.add_message_with_timestamp(
+                conversation_id=conversation_id,
+                role=role,
+                content=content
+            )
+
+            if success:
+                if self.config_manager.timestamp_enhancement_debug:
+                    self.logger.debug(f"已保存消息到对话历史: {role} - {content[:50]}...")
+            else:
+                self.logger.warning(f"保存消息到对话历史失败")
+
+        except Exception as e:
+            self.logger.error(f"保存消息到对话历史时出现异常: {e}")

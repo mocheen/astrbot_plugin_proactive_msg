@@ -3,9 +3,9 @@
 负责主动消息插件的定时任务管理
 """
 import asyncio
-import logging
 from typing import Callable, Any, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from astrbot.api import logger
 
 
 class SchedulerManager:
@@ -15,7 +15,8 @@ class SchedulerManager:
         self.context = context
         self.config = config
         self.scheduler: Optional[AsyncIOScheduler] = None
-        self.logger = logging.getLogger(__name__)
+        # 使用AstrBot提供的logger
+        self.logger = logger
         self.jobs: list = []
 
     async def start(self):
@@ -144,4 +145,9 @@ class SchedulerManager:
 
     def __del__(self):
         """析构函数，确保调度器被正确关闭"""
-        self.stop()
+        if self.scheduler:
+            try:
+                self.scheduler.shutdown(wait=False)
+            except Exception as e:
+                # 在析构函数中无法使用异步日志，所以使用print
+                print(f"关闭调度器时出现错误: {e}")
