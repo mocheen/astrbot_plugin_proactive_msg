@@ -5,6 +5,7 @@
 import os
 import json
 from typing import Dict, Optional
+from astrbot.api import logger
 
 
 class PromptManager:
@@ -12,6 +13,8 @@ class PromptManager:
 
     def __init__(self, config: dict):
         self.config = config
+        # 使用AstrBot提供的logger
+        self.logger = logger
 
         # 默认提示词模板路径
         self.template_path = os.path.join(os.path.dirname(__file__), 'prompts')
@@ -50,30 +53,6 @@ class PromptManager:
     def _create_analysis_prompt_template(self):
         """创建分析提示词模板"""
         template_file = os.path.join(self.template_path, 'analysis_prompt_template.txt')
-
-        if not os.path.exists(template_file):
-            template_content = """你是一个智能对话分析助手。请根据以下对话历史和时间信息，判断现在是否适合发送主动消息给用户。
-
-对话历史:
-{DIALOGUE_HISTORY}
-
-当前时间信息: {TIME_INFO}
-回复频率要求: {FREQUENCY_INFO}
-
-请进行智能分析：
-1. 考虑对话的自然程度和当前时间是否合适
-2. 考虑用户可能正在忙或有其他事情
-3. 避免在可能打扰用户的时候发送消息
-4. 确保发送的消息有实际意义和价值
-
-判断规则（请严格遵守回复格式，方便程序识别和截取）：
-- 如果适合发送主动消息，请回复: "^&YES&^"
-- 如果不适合发送主动消息，请回复: "^&NO^"
-
-请做出最合适的判断。"""
-
-            with open(template_file, 'w', encoding='utf-8') as f:
-                f.write(template_content)
 
     def _create_topic_prompt_template(self):
         """创建话题生成提示词模板"""
@@ -121,6 +100,7 @@ class PromptManager:
             return prompt
 
         except Exception as e:
+            self.logger.error(f"获取分析提示词失败: {e}")
             # 如果模板文件读取失败，返回默认提示词
             return self._get_default_analysis_prompt(dialogue_history, time_info, frequency_info)
 
@@ -142,6 +122,7 @@ class PromptManager:
             return prompt
 
         except Exception as e:
+            self.logger.error(f"获取话题生成提示词失败: {e}")
             # 如果模板文件读取失败，返回默认提示词
             return self._get_default_topic_prompt(dialogue_history)
 

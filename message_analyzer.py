@@ -3,7 +3,6 @@
 负责主动消息的消息历史获取和LLM调用分析
 """
 import asyncio
-import logging
 import time
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
@@ -11,6 +10,7 @@ from typing import List, Optional, Dict, Any
 from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api.provider import LLMResponse
+from astrbot.api import logger
 
 
 class MessageAnalyzer:
@@ -19,7 +19,8 @@ class MessageAnalyzer:
     def __init__(self, context, config: dict):
         self.context = context
         self.config = config
-        self.logger = logging.getLogger(__name__)
+        # 使用AstrBot提供的logger
+        self.logger = logger
 
         # 配置项
         self.no_message_threshold = self._parse_time_threshold(config.get("no_message_threshold", "30min"))
