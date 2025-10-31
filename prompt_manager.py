@@ -58,25 +58,34 @@ class PromptManager:
         """创建话题生成提示词模板"""
         template_file = os.path.join(self.template_path, 'topic_prompt_template.txt')
 
-        if not os.path.exists(template_file):
-            template_content = """你是一个智能话题生成助手。基于以下对话历史，生成一个自然的主动话题。
+    def get_analysis_system_prompt(self) -> str:
+        """获取分析系统提示词"""
+        try:
+            # 从系统提示词文件读取
+            system_prompt_file = os.path.join(self.template_path, 'analysis_system_prompt.txt')
+            with open(system_prompt_file, 'r', encoding='utf-8') as f:
+                system_prompt = f.read().strip()
+            return system_prompt
+        except Exception as e:
+            self.logger.error(f"获取分析系统提示词失败: {e}")
+            # 如果文件读取失败，返回默认系统提示词
+            return "你是一个智能对话分析助手，负责判断是否适合发送主动消息。请严格遵守回复格式，方便程序识别。"
 
-对话历史:
-{DIALOGUE_HISTORY}
-
-要求：
-1. 话题要与当前对话相关或自然延伸
-2. 话题应该有趣、有意义，能够引导用户继续对话
-3. 避免敏感或不适当的话题
-4. 话题应该简洁明了，长度在20-50字左右
-
-请直接返回话题内容，不要包含其他说明。"""
-
-            with open(template_file, 'w', encoding='utf-8') as f:
-                f.write(template_content)
+    def get_topic_system_prompt(self) -> str:
+        """获取话题生成系统提示词"""
+        try:
+            # 从系统提示词文件读取
+            system_prompt_file = os.path.join(self.template_path, 'topic_system_prompt.txt')
+            with open(system_prompt_file, 'r', encoding='utf-8') as f:
+                system_prompt = f.read().strip()
+            return system_prompt
+        except Exception as e:
+            self.logger.error(f"获取话题系统提示词失败: {e}")
+            # 如果文件读取失败，返回默认系统提示词
+            return "你是一个智能话题生成助手，负责生成自然的对话话题。"
 
     def get_analysis_prompt(self, dialogue_history: str, time_info: str = "", frequency_info: str = "") -> str:
-        """获取分析提示词"""
+        """获取分析用户提示词"""
         try:
             # 如果没有提供频率信息，则从配置获取
             if not frequency_info:
@@ -105,7 +114,7 @@ class PromptManager:
             return self._get_default_analysis_prompt(dialogue_history, time_info, frequency_info)
 
     def get_topic_prompt(self, dialogue_history: str) -> str:
-        """获取话题生成提示词"""
+        """获取话题生成用户提示词"""
         try:
             # 构建提示词变量
             variables = {
@@ -134,41 +143,22 @@ class PromptManager:
     def _get_default_analysis_prompt(self, dialogue_history: str, time_info: str, frequency_info: str) -> str:
         """获取默认分析提示词"""
         if not frequency_info:
+            self.logger.error(f"获取分析用户提示词失败")
             frequency_mode = self.config.get("reply_frequency", "moderate")
             frequency_info = self._get_frequency_description(frequency_mode)
 
-        return f"""你是一个智能对话分析助手。请根据以下对话历史和时间信息，判断现在是否适合发送主动消息给用户。
-
-对话历史:
+        return f"""对话历史:
 {dialogue_history}
 
 当前时间信息: {time_info}
 回复频率要求: {frequency_info}
 
-请进行智能分析：
-1. 考虑对话的自然程度和当前时间是否合适
-2. 考虑用户可能正在忙或有其他事情
-3. 避免在可能打扰用户的时候发送消息
-4. 确保发送的消息有实际意义和价值
-
-判断规则（请严格遵守回复格式，方便程序识别和截取）：
-- 如果适合发送主动消息，请回复: "^&YES&^"
-- 如果不适合发送主动消息，请回复: "^&NO^"
-
 请做出最合适的判断。"""
 
     def _get_default_topic_prompt(self, dialogue_history: str) -> str:
         """获取默认话题生成提示词"""
-        return f"""你是一个智能话题生成助手。基于以下对话历史，生成一个自然的主动话题。
-
-对话历史:
+        return f"""对话历史:
 {dialogue_history}
-
-要求：
-1. 话题要与当前对话相关或自然延伸
-2. 话题应该有趣、有意义，能够引导用户继续对话
-3. 避免敏感或不适当的话题
-4. 话题应该简洁明了，长度在20-50字左右
 
 请直接返回话题内容，不要包含其他说明。"""
 

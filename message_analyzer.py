@@ -203,7 +203,7 @@ class MessageAnalyzer:
             return []
 
     async def _build_analysis_prompt(self, session_id: str) -> str:
-        """构建分析提示词"""
+        """构建分析用户提示词"""
         message_history = await self._get_message_history(session_id)
 
         # 构建上下文
@@ -219,7 +219,7 @@ class MessageAnalyzer:
             "frequent": "频繁模式 - 平均1小时发送，误差正负半小时"
         }
 
-        # 使用提示词管理器生成提示词
+        # 使用提示词管理器生成用户提示词
         time_info = '已启用时间感知' if self.enable_time_check else '未启用时间感知'
         frequency_info = frequency_descriptions.get(frequency_mode, frequency_descriptions['moderate'])
 
@@ -230,7 +230,7 @@ class MessageAnalyzer:
         )
 
     async def _build_topic_prompt(self, session_id: str) -> str:
-        """构建话题生成提示词"""
+        """构建话题生成用户提示词"""
         message_history = await self._get_message_history(session_id)
 
         # 构建上下文
@@ -238,7 +238,7 @@ class MessageAnalyzer:
         for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
             dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}: {msg.get('content', 'empty')}\n"
 
-        # 使用提示词管理器生成提示词
+        # 使用提示词管理器生成用户提示词
         return self.prompt_manager.get_topic_prompt(dialogue_history)
 
     async def _call_llm_for_decision(self, prompt: str) -> tuple[bool, str]:
@@ -254,15 +254,14 @@ class MessageAnalyzer:
 
             self.logger.info(f"成功获取LLM提供者: {provider.meta().id}")
             
-            # 构建系统提示词
-            system_prompt = "你是一个智能对话分析助手，负责判断是否适合发送主动消息。请根据提供的对话历史和上下文信息，判断现在是否适合发送主动消息。请在回复中包含 ^&YES&^ 表示应该发送主动消息，或 ^&NO&^ 表示不应该发送主动消息。"
+            # 使用提示词管理器获取系统提示词
+            system_prompt = self.prompt_manager.get_analysis_system_prompt()
             
             # 记录给LLM的整体信息
             self.logger.info(f"LLM决策请求 - 系统提示: {system_prompt}")
-            self.logger.info(f"LLM决策请求 - 用户提示长度: {len(prompt)} 字符")
+            self.logger.info(f"LLM决策请求 - 用户提示: {prompt} ")
 
             # 调用LLM - 使用AstrBot核心系统的方式
-            self.logger.info("正在调用LLM生成响应...")
             response = await provider.text_chat(
                 prompt=prompt,
                 system_prompt=system_prompt
@@ -281,10 +280,8 @@ class MessageAnalyzer:
             self.logger.info(f"LLM决策回复: {response_text}")
             
             if "^&YES&^" in response_text:
-                self.logger.info("LLM决策结果: 发送主动消息")
                 return True, response_text
             elif "^&NO&^" in response_text:
-                self.logger.info("LLM决策结果: 不发送主动消息")
                 return False, response_text
             else:
                 self.logger.info(f"LLM返回了无法识别的响应: {response_text}")
@@ -303,12 +300,12 @@ class MessageAnalyzer:
                 self.logger.info("没有可用的LLM提供者")
                 return None
 
-            # 构建系统提示词
-            system_prompt = "你是一个智能话题生成助手，负责生成自然的对话话题。请根据提供的对话历史，生成一个适合当前对话氛围的话题。话题应该自然、有趣，并且能够引导对话继续。"
+            # 使用提示词管理器获取系统提示词
+            system_prompt = self.prompt_manager.get_topic_system_prompt()
             
             # 记录给LLM的整体信息
             self.logger.info(f"LLM话题生成请求 - 系统提示: {system_prompt}")
-            self.logger.info(f"LLM话题生成请求 - 用户提示长度: {len(prompt)} 字符")
+            self.logger.info(f"LLM话题生成请求 - 用户提示: {prompt} ")
 
             # 调用LLM - 使用AstrBot核心系统的方式
             response = await provider.text_chat(
