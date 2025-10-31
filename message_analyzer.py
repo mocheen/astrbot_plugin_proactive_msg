@@ -58,7 +58,6 @@ class MessageAnalyzer:
 
             # 记录详细的决策结果
             decision = "发送主动消息" if should_send else "不发送主动消息"
-            self.logger.info(f"会话 {session_id} LLM决策结果: {decision}")
             self.logger.info(f"会话 {session_id} LLM完整回复: {llm_response}")
             
             return should_send
@@ -209,7 +208,22 @@ class MessageAnalyzer:
         # 构建上下文
         dialogue_history = "对话历史:\n"
         for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
-            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}: {msg.get('content', 'empty')}\n"
+            # 添加时间信息（如果存在）
+            timestamp = ""
+            if 'timestamp' in msg:
+                # 将时间戳转换为可读格式
+                try:
+                    from datetime import datetime
+                    if isinstance(msg['timestamp'], (int, float)):
+                        dt = datetime.fromtimestamp(msg['timestamp'])
+                        timestamp = f" [{dt.strftime('%Y-%m-%d %H:%M:%S')}]"
+                    elif isinstance(msg['timestamp'], str):
+                        timestamp = f" [{msg['timestamp']}]"
+                except Exception as e:
+                    self.logger.warning(f"解析时间戳失败: {e}")
+                    timestamp = ""
+
+            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}{timestamp}: {msg.get('content', 'empty')}\n"
 
         # 获取回复频率模式描述
         frequency_mode = self.config.get("reply_frequency", "moderate")
@@ -220,7 +234,11 @@ class MessageAnalyzer:
         }
 
         # 使用提示词管理器生成用户提示词
-        time_info = '已启用时间感知' if self.enable_time_check else '未启用时间感知'
+        if self.enable_time_check:
+            current_time = datetime.now()
+            time_info = f'当前时间: {current_time.strftime("%Y-%m-%d %H:%M:%S")} ({self._get_time_period(current_time)})'
+        else:
+            time_info = '未启用时间感知'
         frequency_info = frequency_descriptions.get(frequency_mode, frequency_descriptions['moderate'])
 
         return self.prompt_manager.get_analysis_prompt(
@@ -236,7 +254,22 @@ class MessageAnalyzer:
         # 构建上下文
         dialogue_history = "对话历史:\n"
         for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
-            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}: {msg.get('content', 'empty')}\n"
+            # 添加时间信息（如果存在）
+            timestamp = ""
+            if 'timestamp' in msg:
+                # 将时间戳转换为可读格式
+                try:
+                    from datetime import datetime
+                    if isinstance(msg['timestamp'], (int, float)):
+                        dt = datetime.fromtimestamp(msg['timestamp'])
+                        timestamp = f" [{dt.strftime('%Y-%m-%d %H:%M:%S')}]"
+                    elif isinstance(msg['timestamp'], str):
+                        timestamp = f" [{msg['timestamp']}]"
+                except Exception as e:
+                    self.logger.warning(f"解析时间戳失败: {e}")
+                    timestamp = ""
+
+            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}{timestamp}: {msg.get('content', 'empty')}\n"
 
         # 使用提示词管理器生成用户提示词
         return self.prompt_manager.get_topic_prompt(dialogue_history)
@@ -244,7 +277,6 @@ class MessageAnalyzer:
     async def _call_llm_for_decision(self, prompt: str) -> tuple[bool, str]:
         """调用LLM进行决策"""
         try:
-            self.logger.info("开始调用LLM进行决策")
             
             # 获取LLM提供者 - 使用AstrBot核心系统的方式
             provider = self.context.get_using_provider()
@@ -337,3 +369,24 @@ class MessageAnalyzer:
         }
 
         return threshold_mapping.get(threshold, 30 * 60)  # 默认30分钟
+
+    def _get_time_period(self, dt: datetime) -> str:
+        """获取时间段描述"""
+        hour = dt.hour
+
+        if 5 <= hour < 8:
+            return "清晨"
+        elif 8 <= hour < 12:
+            return "上午"
+        elif 12 <= hour < 14:
+            return "中午"
+        elif 14 <= hour < 17:
+            return "下午"
+        elif 17 <= hour < 19:
+            return "傍晚"
+        elif 19 <= hour < 22:
+            return "晚上"
+        elif 22 <= hour or hour < 2:
+            return "深夜"
+        else:  # 2 <= hour < 5
+            return "凌晨"

@@ -143,7 +143,6 @@ class PromptManager:
     def _get_default_analysis_prompt(self, dialogue_history: str, time_info: str, frequency_info: str) -> str:
         """获取默认分析提示词"""
         if not frequency_info:
-            self.logger.error(f"获取分析用户提示词失败")
             frequency_mode = self.config.get("reply_frequency", "moderate")
             frequency_info = self._get_frequency_description(frequency_mode)
 
