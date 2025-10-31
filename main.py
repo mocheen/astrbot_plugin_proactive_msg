@@ -251,8 +251,6 @@ class ProactiveMsg(Star):
                 self.logger.error(f"会话 {session_id} - 主机器人LLM未能生成有效回复")
                 return
 
-            self.logger.info(f"会话 {session_id} - 主机器人LLM生成回复: {final_reply}")
-
             # 如果启用了时间戳增强，将主动消息保存到对话历史
             if self.config_manager.enable_timestamp_enhancement:
                 await self._save_message_to_history(session_id, "assistant", final_reply)
