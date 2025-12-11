@@ -85,12 +85,29 @@ class ProactiveMsg(Star):
 
         # 检查是否启用调试触发
         if self.config_manager.debug_trigger_on_init:
-            try:
-                await self._check_and_send_proactive_messages()
-            except Exception as e:
-                self.logger.error(f"调试轮询任务执行失败: {e}")
+            self.logger.info("调试触发已启用，等待系统完全初始化后执行调试轮询...")
+            # 延迟调试触发，确保系统完全初始化
+            asyncio.create_task(self._delayed_debug_trigger())
 
         self.logger.info(f"主动消息插件已启动，轮询间隔: {poll_interval}")
+
+    async def _delayed_debug_trigger(self):
+        """延迟调试触发，确保系统完全初始化"""
+        try:
+            # 等待5秒，让系统完全初始化
+            await asyncio.sleep(5)
+            
+            # 检查Provider是否可用
+            provider = self.context.get_using_provider()
+            if not provider:
+                self.logger.warning("调试触发跳过：LLM Provider尚未准备好")
+                return
+                
+            self.logger.info("执行调试轮询任务...")
+            await self._check_and_send_proactive_messages()
+            self.logger.info("调试轮询任务执行完成")
+        except Exception as e:
+            self.logger.error(f"调试轮询任务执行失败: {e}")
 
     async def terminate(self):
         """插件销毁"""
@@ -100,6 +117,12 @@ class ProactiveMsg(Star):
     async def _check_and_send_proactive_messages(self):
         """检查并发送主动消息"""
         try:
+            # 检查系统是否已完全初始化
+            provider = self.context.get_using_provider()
+            if not provider:
+                self.logger.warning("LLM Provider尚未准备好，跳过本次轮询")
+                return
+
             self.logger.info("开始检查主动消息...")
 
             # 获取所有私聊会话

@@ -122,13 +122,19 @@ class MessageAnalyzer:
         """获取会话的最后一条消息时间戳"""
         try:
             # 首先尝试通过 conversation_manager 获取会话历史
-            conversation_manager = self.context.get_conversation_manager()
+            conversation_manager = self.context.conversation_manager
             if not conversation_manager:
                 self.logger.error("无法获取 conversation_manager")
                 return None
 
+            # 获取当前会话ID
+            conversation_id = await conversation_manager.get_curr_conversation_id(session_id)
+            if not conversation_id:
+                self.logger.warning(f"会话 {session_id} 没有对应的对话ID")
+                return None
+
             # 获取会话历史
-            conversation = await conversation_manager.get_conversation(session_id)
+            conversation = await conversation_manager.get_conversation(session_id, conversation_id)
             if not conversation:
                 self.logger.warning(f"未找到会话 {session_id}")
                 return None
@@ -171,7 +177,7 @@ class MessageAnalyzer:
                 
             # 尝试通过 platform_message_history_manager 获取
             try:
-                platform_message_history_manager = self.context.get_platform_message_history_manager()
+                platform_message_history_manager = self.context.message_history_manager
                 if platform_message_history_manager:
                     # 获取该会话的最新消息
                     platform_id = session_id.split('_')[0] if '_' in session_id else session_id
@@ -319,7 +325,7 @@ class MessageAnalyzer:
             # 获取LLM提供者 - 使用AstrBot核心系统的方式
             provider = self.context.get_using_provider()
             if not provider:
-                self.logger.info("没有可用的LLM提供者")
+                self.logger.warning("没有可用的LLM提供者，可能是系统尚未完全初始化")
                 return False, "没有可用的LLM提供者"
 
             self.logger.info(f"成功获取LLM提供者: {provider.meta().id}")
@@ -357,8 +363,11 @@ class MessageAnalyzer:
                 self.logger.info(f"LLM返回了无法识别的响应: {response_text}")
                 return False, response_text
 
+        except asyncio.CancelledError:
+            self.logger.warning("LLM调用被取消，可能是系统初始化过程中的正常情况")
+            return False, "LLM调用被取消"
         except Exception as e:
-            self.logger.info(f"调用LLM进行决策时出现错误: {e}")
+            self.logger.error(f"调用LLM进行决策时出现错误: {e}")
             return False, f"调用LLM时出现错误: {str(e)}"
 
     async def _call_llm_for_topic(self, prompt: str) -> Optional[str]:
