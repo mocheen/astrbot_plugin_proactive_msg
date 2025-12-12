@@ -81,8 +81,8 @@ class MessageAnalyzer:
                 self.logger.warning(f"会话 {session_id} 没有消息历史，无法生成话题")
                 return None
 
-            # 构建话题提示词
-            prompt = await self._build_topic_prompt(dialogue_history)
+            # 构建话题提示词（使用已有的消息历史，避免重复获取）
+            prompt = self._build_topic_prompt_with_history(dialogue_history)
 
             # 调用LLM生成话题
             topic = await self._call_llm_for_topic(prompt)
@@ -121,6 +121,19 @@ class MessageAnalyzer:
     async def _get_last_message_time(self, session_id: str) -> Optional[int]:
         """获取会话的最后一条消息时间戳"""
         try:
+            # 验证 session_id 参数类型
+            if not session_id:
+                self.logger.warning("session_id 为空")
+                return None
+
+            if isinstance(session_id, list):
+                self.logger.error(f"session_id 不能是列表类型: {session_id}")
+                return None
+
+            if not isinstance(session_id, str):
+                self.logger.error(f"session_id 必须是字符串类型，当前类型: {type(session_id)}, 值: {session_id}")
+                return None
+
             # 首先尝试通过 conversation_manager 获取会话历史
             conversation_manager = self.context.conversation_manager
             if not conversation_manager:
@@ -202,6 +215,19 @@ class MessageAnalyzer:
     async def _get_message_history(self, session_id: str) -> List[Dict[str, Any]]:
         """获取消息历史"""
         try:
+            # 验证 session_id 参数类型
+            if not session_id:
+                self.logger.warning("session_id 为空")
+                return []
+
+            if isinstance(session_id, list):
+                self.logger.error(f"session_id 不能是列表类型: {session_id}")
+                return []
+
+            if not isinstance(session_id, str):
+                self.logger.error(f"session_id 必须是字符串类型，当前类型: {type(session_id)}, 值: {session_id}")
+                return []
+
             self.logger.debug(f"尝试获取会话 {session_id} 的消息历史")
 
             if self.enable_timestamp_enhancement:
@@ -308,6 +334,21 @@ class MessageAnalyzer:
         # 构建上下文
         dialogue_history = "对话历史:\n"
         for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
+            # 添加时间信息（如果存在）
+            timestamp_str = ""
+            if 'timestamp' in msg:
+                timestamp_str = f" [{self.history_enhancer.format_timestamp(msg['timestamp'])}]"
+
+            dialogue_history += f"{i+1}. {msg.get('role', 'unknown')}{timestamp_str}: {msg.get('content', 'empty')}\n"
+
+        # 使用提示词管理器生成用户提示词
+        return self.prompt_manager.get_topic_prompt(dialogue_history)
+
+    def _build_topic_prompt_with_history(self, dialogue_history_list: List[Dict[str, Any]]) -> str:
+        """构建话题生成用户提示词（使用已有的消息历史）"""
+        # 构建上下文
+        dialogue_history = "对话历史:\n"
+        for i, msg in enumerate(dialogue_history_list[-5:]):  # 只取最近5条消息
             # 添加时间信息（如果存在）
             timestamp_str = ""
             if 'timestamp' in msg:

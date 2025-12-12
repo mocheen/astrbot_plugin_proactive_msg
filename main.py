@@ -198,8 +198,22 @@ class ProactiveMsg(Star):
                     # conv.user_id 就是会话ID (unified_msg_origin)
                     # 格式为 platform_id:message_type:session_id
                     user_id = conv.user_id
-                    self.logger.debug(f"处理会话ID: {user_id}")
-                    
+
+                    # 添加类型检查和调试信息
+                    self.logger.debug(f"处理会话ID: {user_id}, 类型: {type(user_id)}")
+
+                    if not user_id:
+                        self.logger.warning("会话ID为空，跳过")
+                        continue
+
+                    if isinstance(user_id, list):
+                        self.logger.error(f"会话ID是列表类型，这不应该发生: {user_id}")
+                        continue
+
+                    if not isinstance(user_id, str):
+                        self.logger.error(f"会话ID不是字符串类型，这不应该发生: 类型={type(user_id)}, 值={user_id}")
+                        continue
+
                     # 检查是否为私聊会话
                     if self._is_private_conversation_by_id(user_id):
                         private_sessions.add(user_id)
@@ -353,6 +367,19 @@ class ProactiveMsg(Star):
         """保存消息到对话历史（带时间戳）"""
         try:
             if not self.config_manager.enable_timestamp_enhancement:
+                return
+
+            # 验证 session_id 参数类型
+            if not session_id:
+                self.logger.warning("session_id 为空，无法保存消息")
+                return
+
+            if isinstance(session_id, list):
+                self.logger.warning(f"会话 {session_id} 是列表类型，无法保存消息")
+                return
+
+            if not isinstance(session_id, str):
+                self.logger.warning(f"会话 {session_id} 不是字符串类型，无法保存消息")
                 return
 
             # 获取当前对话ID

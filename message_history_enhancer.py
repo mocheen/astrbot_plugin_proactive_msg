@@ -249,6 +249,19 @@ class MessageHistoryEnhancer:
             增强的对话历史列表
         """
         try:
+            # 验证 session_id 参数类型
+            if not session_id:
+                logger.warning("session_id 为空")
+                return []
+
+            if isinstance(session_id, list):
+                logger.error(f"session_id 不能是列表类型: {session_id}")
+                return []
+
+            if not isinstance(session_id, str):
+                logger.error(f"session_id 必须是字符串类型，当前类型: {type(session_id)}, 值: {session_id}")
+                return []
+
             # 获取当前对话ID
             conversation_id = await self.conversation_manager.get_curr_conversation_id(session_id)
             if not conversation_id:
