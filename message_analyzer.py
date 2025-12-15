@@ -13,6 +13,7 @@ from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api.provider import LLMResponse
 from astrbot.api import logger
 from .message_history_enhancer import MessageHistoryEnhancer
+from .context_processor import ContextProcessor
 
 
 class MessageAnalyzer:
@@ -35,6 +36,9 @@ class MessageAnalyzer:
 
         # 初始化消息历史增强器
         self.history_enhancer = MessageHistoryEnhancer(context)
+        
+        # 初始化上下文处理器 - 复用主机器人的截断算法
+        self.context_processor = ContextProcessor(context)
 
     async def should_send_proactive_message(self, session_id: str) -> bool:
         """第一步：判断是否应该发送主动消息"""
@@ -213,7 +217,7 @@ class MessageAnalyzer:
             return None
 
     async def _get_message_history(self, session_id: str) -> List[Dict[str, Any]]:
-        """获取消息历史"""
+        """获取消息历史 - 使用主机器人的上下文截断算法"""
         try:
             # 验证 session_id 参数类型
             if not session_id:
@@ -235,7 +239,10 @@ class MessageAnalyzer:
                 enhanced_history = await self.history_enhancer.get_enhanced_conversation_history(session_id, limit=10)
                 if enhanced_history:
                     self.logger.debug(f"使用增强器获取到 {len(enhanced_history)} 条带时间戳的消息")
-                    return enhanced_history
+                    # 应用主机器人的上下文截断算法
+                    processed_history = self.context_processor.apply_context_limit(enhanced_history)
+                    self.logger.info(f"应用上下文截断后，消息数量从 {len(enhanced_history)} 减少到 {len(processed_history)}")
+                    return processed_history
 
             # 回退到原始方法
             conversation_manager = self.context.conversation_manager
@@ -258,27 +265,26 @@ class MessageAnalyzer:
                 self.logger.warning(f"会话 {session_id} 的对话历史为空")
                 return []
 
-            # 解析JSON格式的对话历史
-            import json
-            try:
-                history_data = json.loads(history_json)
-                self.logger.debug(f"从conversation获取到 {len(history_data) if history_data else 0} 条消息")
-                return history_data
-            except json.JSONDecodeError as e:
-                self.logger.error(f"解析对话历史JSON失败: {e}")
-                return []
+            # 使用上下文处理器提取并截断上下文，保留时间戳信息
+            processed_history = self.context_processor.extract_contexts_with_timestamp(history_json)
+            self.logger.info(f"从conversation获取并应用截断后，消息数量: {len(processed_history)}")
+            return processed_history
 
         except Exception as e:
             self.logger.error(f"获取消息历史失败: {e}")
             return []
 
     async def _build_analysis_prompt(self, session_id: str) -> str:
-        """构建分析用户提示词"""
+        """构建分析用户提示词 - 使用与主机器人相同的上下文"""
         message_history = await self._get_message_history(session_id)
+        
+        # 获取上下文配置信息
+        context_info = self.context_processor.get_context_info()
+        self.logger.info(f"构建分析提示词 - 上下文配置: {context_info}")
 
-        # 构建上下文
+        # 构建上下文（使用与主机器人LLM请求时相同的历史消息）
         dialogue_history = "对话历史:\n"
-        for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
+        for i, msg in enumerate(message_history):  # 使用所有获取到的历史消息用于分析
             # 添加时间信息（如果存在）
             timestamp_str = ""
             if 'timestamp' in msg:
@@ -328,12 +334,16 @@ class MessageAnalyzer:
         )
 
     async def _build_topic_prompt(self, session_id: str) -> str:
-        """构建话题生成用户提示词"""
+        """构建话题生成用户提示词 - 使用与主机器人相同的上下文"""
         message_history = await self._get_message_history(session_id)
+        
+        # 获取上下文配置信息
+        context_info = self.context_processor.get_context_info()
+        self.logger.info(f"构建话题提示词 - 上下文配置: {context_info}")
 
-        # 构建上下文
+        # 构建上下文（使用与主机器人LLM请求时相同的历史消息）
         dialogue_history = "对话历史:\n"
-        for i, msg in enumerate(message_history[-5:]):  # 只取最近5条消息
+        for i, msg in enumerate(message_history):  # 使用所有获取到的历史消息用于话题生成
             # 添加时间信息（如果存在）
             timestamp_str = ""
             if 'timestamp' in msg:
@@ -348,7 +358,7 @@ class MessageAnalyzer:
         """构建话题生成用户提示词（使用已有的消息历史）"""
         # 构建上下文
         dialogue_history = "对话历史:\n"
-        for i, msg in enumerate(dialogue_history_list[-5:]):  # 只取最近5条消息
+        for i, msg in enumerate(dialogue_history_list):  # 使用所有历史消息
             # 添加时间信息（如果存在）
             timestamp_str = ""
             if 'timestamp' in msg:
